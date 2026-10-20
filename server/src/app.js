@@ -33,6 +33,7 @@ export function createApp() {
       error: {
         code: 'NOT_FOUND',
         message: 'The requested API route was not found.',
+        details: [],
       },
     });
   });
@@ -44,6 +45,7 @@ export function createApp() {
         error: {
           code: 'INVALID_JSON',
           message: 'Request body must contain valid JSON.',
+          details: [],
         },
       });
     }
@@ -53,27 +55,42 @@ export function createApp() {
         error: {
           code: 'PAYLOAD_TOO_LARGE',
           message: 'Request body exceeds the 256 KB limit.',
+          details: [],
         },
       });
     }
-    if (error?.name === 'ValidationError' || error?.name === 'CastError') {
-      return response
-        .status(400)
-        .json({
-          success: false,
-          error: { code: 'VALIDATION_ERROR', message: error.message },
-        });
+    if (error?.name === 'ValidationError') {
+      return response.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'One or more fields are invalid.',
+          details: Object.values(error.errors ?? {}).map((item) => ({
+            field: item.path,
+            message: item.message,
+          })),
+        },
+      });
+    }
+    if (error?.name === 'CastError') {
+      return response.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'A field has an invalid value.',
+          details: [{ field: error.path, message: 'Invalid value.' }],
+        },
+      });
     }
     if (error?.code === 11000) {
-      return response
-        .status(409)
-        .json({
-          success: false,
-          error: {
-            code: 'CONFLICT',
-            message: 'A resource with these unique fields already exists.',
-          },
-        });
+      return response.status(409).json({
+        success: false,
+        error: {
+          code: 'CONFLICT',
+          message: 'A resource with these unique fields already exists.',
+          details: [],
+        },
+      });
     }
     if (!error?.status || error.status >= 500)
       console.error(
@@ -92,6 +109,8 @@ export function createApp() {
         message: error?.status
           ? error.message
           : 'An unexpected server error occurred.',
+        details:
+          error?.status && Array.isArray(error.details) ? error.details : [],
       },
     });
   });

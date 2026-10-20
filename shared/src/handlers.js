@@ -36,7 +36,27 @@ export function validateInvariants(invariants = []) {
     invariants.length > 20 ||
     invariants.some(
       (item) =>
-        !item || typeof item.path !== 'string' || !operators.has(item.operator),
+        !item ||
+        typeof item !== 'object' ||
+        Array.isArray(item) ||
+        Object.keys(item).some(
+          (key) => !['path', 'operator', 'value', 'message'].includes(key),
+        ) ||
+        typeof item.path !== 'string' ||
+        item.path.length > 200 ||
+        !/^[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*$/.test(
+          item.path,
+        ) ||
+        item.path
+          .split('.')
+          .some((part) =>
+            ['__proto__', 'prototype', 'constructor'].includes(part),
+          ) ||
+        !operators.has(item.operator) ||
+        (item.operator === 'equals' && item.value === undefined) ||
+        (item.operator === 'greaterThan' && !Number.isFinite(item.value)) ||
+        (item.message !== undefined &&
+          (typeof item.message !== 'string' || item.message.length > 200)),
     )
   )
     throw new Error(

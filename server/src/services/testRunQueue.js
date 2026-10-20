@@ -35,5 +35,4 @@ export async function enqueueTestRun(runId) {
 
 export async function closeQueue() {
   if (producerPromise) await (await producerPromise).disconnect();
-  await kafka.disconnect();
 }

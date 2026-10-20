@@ -5,7 +5,9 @@ export function buildReport(results, fixtureSummary) {
   const outcome =
     fixtureSummary.failedFixtures ||
     fixtureSummary.failedConsumers ||
-    compatibilityFindings.some((item) => item.severity === 'breaking')
+    compatibilityFindings.some((item) =>
+      ['breaking', 'error'].includes(item.severity),
+    )
       ? 'fail'
       : compatibilityFindings.length
         ? 'warning'

@@ -20,9 +20,11 @@ export async function processTestRun(runId) {
       (schema) => schema.version === run.fromVersion,
     );
     const next = schemas.find((schema) => schema.version === run.toVersion);
-    const findings = compareSchemas(previous.schema, next.schema).map(
-      (item) => ({ type: 'compatibility', ...item }),
-    );
+    const findings = compareSchemas(
+      previous.schemaDefinition ?? previous.schema,
+      next.schemaDefinition ?? next.schema,
+      { oldVersion: previous.version, newVersion: next.version },
+    ).map((item) => ({ type: 'compatibility', ...item }));
     const replay = replayFixtures({
       fixtures,
       schemas,

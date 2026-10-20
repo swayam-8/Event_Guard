@@ -36,6 +36,18 @@ npm run dev
 
 `npm run dev` starts the API, Kafka worker, and Vite client. Copy `.env.example` to `.env` to override the local defaults. The web UI only accepts the configured CORS origin (`CORS_ORIGIN`, default `http://localhost:5173`).
 
+### Run only the core REST API
+
+The Projects, Event schemas, Consumers, and Historical fixtures APIs require MongoDB but do not require Redpanda or the worker:
+
+```sh
+docker compose up -d mongodb
+npm install
+npm run dev:server
+```
+
+The API listens at `http://localhost:4000/api`; check database readiness with `GET /api/health`. Run `npm test` and `npm run lint` from the repository root. API tests use isolated mocked persistence by default. For the opt-in real MongoDB persistence test, set `MONGODB_TEST_URI` to a separate test database (its database name must contain `test`); see [docs/testing.md](docs/testing.md). Full containerized verification requires Docker Desktop to be running.
+
 ## Architecture
 
 ```text

@@ -20,8 +20,14 @@ export function replayFixtures({ fixtures, schemas, consumers, toVersion }) {
     const targetSchema = schemas.find((schema) => schema.version === toVersion);
     if (!sourceSchema || !targetSchema) continue;
     summary.fixturesTested += 1;
-    const sourceResult = validatePayload(sourceSchema.schema, fixture.payload);
-    const replayResult = validatePayload(targetSchema.schema, fixture.payload);
+    const sourceResult = validatePayload(
+      sourceSchema.schemaDefinition ?? sourceSchema.schema,
+      fixture.payload,
+    );
+    const replayResult = validatePayload(
+      targetSchema.schemaDefinition ?? targetSchema.schema,
+      fixture.payload,
+    );
     if (!sourceResult.valid || !replayResult.valid) summary.failedFixtures += 1;
     results.push({
       type: 'fixture',
@@ -37,7 +43,10 @@ export function replayFixtures({ fixtures, schemas, consumers, toVersion }) {
     )) {
       summary.consumersTested += 1;
       const errors = [
-        ...runHandler(consumer.handler, fixture.payload),
+        ...runHandler(
+          consumer.handlerType ?? consumer.handler,
+          fixture.payload,
+        ),
         ...checkInvariants(consumer.invariants ?? [], fixture.payload),
       ];
       summary.invariantViolations += errors.filter(
@@ -51,7 +60,7 @@ export function replayFixtures({ fixtures, schemas, consumers, toVersion }) {
         fixtureId: String(fixture._id),
         schemaVersion: fixture.schemaVersion,
         targetSchemaVersion: toVersion,
-        handler: consumer.handler,
+        handlerType: consumer.handlerType ?? consumer.handler,
         passed,
         errors: [
           ...errors,

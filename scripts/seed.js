@@ -29,12 +29,12 @@ try {
   const v2 = await readJson('../fixtures/order-created-v2-compatible.json');
   await EventSchema.findOneAndUpdate(
     { projectId: project.id, eventName: 'order.created', version: 1 },
-    { $setOnInsert: { schema: v1 } },
+    { $setOnInsert: { schemaDefinition: v1 } },
     { upsert: true, setDefaultsOnInsert: true },
   );
   await EventSchema.findOneAndUpdate(
     { projectId: project.id, eventName: 'order.created', version: 2 },
-    { $setOnInsert: { schema: v2 } },
+    { $setOnInsert: { schemaDefinition: v2 } },
     { upsert: true, setDefaultsOnInsert: true },
   );
   await Consumer.findOneAndUpdate(
@@ -43,7 +43,7 @@ try {
       $setOnInsert: {
         eventName: 'order.created',
         expectedSchemaVersion: 1,
-        handler: 'order-validation',
+        handlerType: 'order-validation',
         enabled: true,
         invariants: [],
       },

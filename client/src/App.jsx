@@ -80,17 +80,29 @@ function ProjectsPage({ workspace }) {
     const name = window.prompt('Project name', project.name);
     if (name === null) return;
     try {
-      await updateProject(project._id, { name, description: project.description });
+      await updateProject(project._id, {
+        name,
+        description: project.description,
+      });
       await workspace.reload();
-    } catch (error) { workspace.setError(error.message); }
+    } catch (error) {
+      workspace.setError(error.message);
+    }
   };
   const remove = async (project) => {
-    if (!window.confirm(`Delete ${project.name} and all its schemas, fixtures, consumers, and runs?`)) return;
+    if (
+      !window.confirm(
+        `Delete ${project.name} and all its schemas, fixtures, consumers, and runs?`,
+      )
+    )
+      return;
     try {
       await deleteProject(project._id);
       if (workspace.projectId === project._id) workspace.setProjectId('');
       await workspace.reload();
-    } catch (error) { workspace.setError(error.message); }
+    } catch (error) {
+      workspace.setError(error.message);
+    }
   };
   const submit = async (event) => {
     event.preventDefault();
@@ -152,8 +164,24 @@ function ProjectsPage({ workspace }) {
                     <small>{project.description || 'No description'}</small>
                   </span>
                   <span className="row-actions">
-                    <span className="quiet-button" onClick={(event) => { event.stopPropagation(); edit(project); }}>Edit</span>
-                    <span className="quiet-button danger-action" onClick={(event) => { event.stopPropagation(); remove(project); }}>Delete</span>
+                    <span
+                      className="quiet-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        edit(project);
+                      }}
+                    >
+                      Edit
+                    </span>
+                    <span
+                      className="quiet-button danger-action"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        remove(project);
+                      }}
+                    >
+                      Delete
+                    </span>
                   </span>
                 </button>
               ))}
@@ -184,10 +212,12 @@ function ResourcePage({ resource, workspace }) {
   const [schemaText, setSchemaText] = useState(
     '{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object",\n  "properties": {\n    "orderId": { "type": "string" },\n    "amount": { "type": "number" },\n    "quantity": { "type": "integer" }\n  },\n  "required": ["orderId"]\n}',
   );
-  const [validationText, setValidationText] = useState('{\n  "orderId": "ord_1001",\n  "amount": 42.5,\n  "quantity": 2\n}');
+  const [validationText, setValidationText] = useState(
+    '{\n  "orderId": "ord_1001",\n  "amount": 42.5,\n  "quantity": 2\n}',
+  );
   const [validationResult, setValidationResult] = useState(null);
-  const [compareFrom, setCompareFrom] = useState('1');
-  const [compareTo, setCompareTo] = useState('2');
+  const [compareOldSchemaId, setCompareOldSchemaId] = useState('');
+  const [compareNewSchemaId, setCompareNewSchemaId] = useState('');
   const [comparison, setComparison] = useState(null);
   const reload = async () => {
     if (!workspace.projectId) return;
@@ -214,14 +244,14 @@ function ResourcePage({ resource, workspace }) {
           ? {
               eventName,
               version: Number(version),
-              schema: JSON.parse(schemaText),
+              schemaDefinition: JSON.parse(schemaText),
             }
           : resource === 'consumers'
             ? {
                 name,
                 eventName,
                 expectedSchemaVersion: Number(version),
-                handler,
+                handlerType: handler,
                 enabled: true,
                 invariants: [],
               }
@@ -242,27 +272,52 @@ function ResourcePage({ resource, workspace }) {
   };
   const removeItem = async (item) => {
     if (!window.confirm('Delete this record?')) return;
-    try { await deleteResource(workspace.projectId, resource, item._id); await reload(); }
-    catch (reason) { setError(reason.message); }
+    try {
+      await deleteResource(workspace.projectId, resource, item._id);
+      await reload();
+    } catch (reason) {
+      setError(reason.message);
+    }
   };
   const toggleConsumer = async (item) => {
-    try { await updateConsumer(workspace.projectId, item._id, { enabled: !item.enabled }); await reload(); }
-    catch (reason) { setError(reason.message); }
+    try {
+      await updateConsumer(workspace.projectId, item._id, {
+        enabled: !item.enabled,
+      });
+      await reload();
+    } catch (reason) {
+      setError(reason.message);
+    }
   };
   const validatePayload = async (event) => {
     event.preventDefault();
     try {
       const schema = items.find((item) => item._id === validationSchemaId);
-      setValidationResult(await validateSchemaPayload(workspace.projectId, schema._id, JSON.parse(validationText)));
-    } catch (reason) { setError(reason.message); }
+      setValidationResult(
+        await validateSchemaPayload(
+          workspace.projectId,
+          schema._id,
+          JSON.parse(validationText),
+        ),
+      );
+    } catch (reason) {
+      setError(reason.message);
+    }
   };
   const [validationSchemaId, setValidationSchemaId] = useState('');
   const compareVersions = async (event) => {
     event.preventDefault();
-    try { setComparison(await compareSchemas(workspace.projectId, { eventName: compareEvent, fromVersion: Number(compareFrom), toVersion: Number(compareTo) })); }
-    catch (reason) { setError(reason.message); }
+    try {
+      setComparison(
+        await compareSchemas(workspace.projectId, {
+          oldSchemaId: compareOldSchemaId,
+          newSchemaId: compareNewSchemaId,
+        }),
+      );
+    } catch (reason) {
+      setError(reason.message);
+    }
   };
-  const [compareEvent, setCompareEvent] = useState('');
   const title = {
     schemas: 'Event schemas',
     consumers: 'Consumers',
@@ -373,19 +428,128 @@ function ResourcePage({ resource, workspace }) {
           {loading ? (
             <Empty>Loading {title.toLowerCase()}…</Empty>
           ) : items.length ? (
-            <ResourceList items={items} resource={resource} onDelete={removeItem} onToggle={toggleConsumer} />
+            <ResourceList
+              items={items}
+              resource={resource}
+              onDelete={removeItem}
+              onToggle={toggleConsumer}
+            />
           ) : (
             <Empty>No {title.toLowerCase()} in this project yet.</Empty>
           )}
         </section>
       </div>
-      {resource === 'schemas' && <div className="section-grid api-tools-grid">
-        <section className="panel"><h2>Validate a payload</h2><p>Check a JSON payload against a registered schema version.</p><form onSubmit={validatePayload}>
-          <label className="field">Schema version<select required value={validationSchemaId} onChange={(event) => setValidationSchemaId(event.target.value)}><option value="">Choose schema</option>{items.map((item) => <option key={item._id} value={item._id}>{item.eventName} · v{item.version}</option>)}</select></label>
-          <label className="field">Payload<textarea className="code-input" rows="6" value={validationText} onChange={(event) => setValidationText(event.target.value)} /></label><button className="primary-button" disabled={!items.length}>Validate payload</button>
-        </form>{validationResult && <div className={`notice ${validationResult.valid ? 'success' : 'error'}`}>{validationResult.valid ? 'Payload is valid.' : `${validationResult.errors?.length ?? 0} validation error(s)`}{validationResult.errors?.map((item, index) => <small key={index}>{item.message}</small>)}</div>}</section>
-        <section className="panel"><h2>Compare schema versions</h2><p>Review likely compatibility changes between two versions.</p><form onSubmit={compareVersions}><Field label="Event name" value={compareEvent} onChange={(event) => setCompareEvent(event.target.value)} placeholder="order.created" /><div className="field-pair"><Field label="From" type="number" min="1" value={compareFrom} onChange={(event) => setCompareFrom(event.target.value)} /><Field label="To" type="number" min="2" value={compareTo} onChange={(event) => setCompareTo(event.target.value)} /></div><button className="primary-button">Compare versions</button></form>{comparison && <div className="finding-list">{comparison.findings.length ? comparison.findings.map((finding, index) => <article className="finding" key={index}><span className="finding-type">{finding.severity}</span><strong>{finding.message}</strong><small>{finding.path} · {finding.code}</small></article>) : <p>No compatibility findings detected.</p>}</div>}</section>
-      </div>}
+      {resource === 'schemas' && (
+        <div className="section-grid api-tools-grid">
+          <section className="panel">
+            <h2>Validate a payload</h2>
+            <p>Check a JSON payload against a registered schema version.</p>
+            <form onSubmit={validatePayload}>
+              <label className="field">
+                Schema version
+                <select
+                  required
+                  value={validationSchemaId}
+                  onChange={(event) =>
+                    setValidationSchemaId(event.target.value)
+                  }
+                >
+                  <option value="">Choose schema</option>
+                  {items.map((item) => (
+                    <option key={item._id} value={item._id}>
+                      {item.eventName} · v{item.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Payload
+                <textarea
+                  className="code-input"
+                  rows="6"
+                  value={validationText}
+                  onChange={(event) => setValidationText(event.target.value)}
+                />
+              </label>
+              <button className="primary-button" disabled={!items.length}>
+                Validate payload
+              </button>
+            </form>
+            {validationResult && (
+              <div
+                className={`notice ${validationResult.valid ? 'success' : 'error'}`}
+              >
+                {validationResult.valid
+                  ? 'Payload is valid.'
+                  : `${validationResult.errors?.length ?? 0} validation error(s)`}
+                {validationResult.errors?.map((item, index) => (
+                  <small key={index}>{item.message}</small>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="panel">
+            <h2>Compare schema versions</h2>
+            <p>Review likely compatibility changes between two versions.</p>
+            <form onSubmit={compareVersions}>
+              <label className="field">
+                Older schema
+                <select
+                  required
+                  value={compareOldSchemaId}
+                  onChange={(event) =>
+                    setCompareOldSchemaId(event.target.value)
+                  }
+                >
+                  <option value="">Choose schema</option>
+                  {items.map((item) => (
+                    <option key={item._id} value={item._id}>
+                      {item.eventName} · v{item.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                Newer schema
+                <select
+                  required
+                  value={compareNewSchemaId}
+                  onChange={(event) =>
+                    setCompareNewSchemaId(event.target.value)
+                  }
+                >
+                  <option value="">Choose schema</option>
+                  {items.map((item) => (
+                    <option key={item._id} value={item._id}>
+                      {item.eventName} · v{item.version}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary-button" disabled={items.length < 2}>
+                Compare versions
+              </button>
+            </form>
+            {comparison && (
+              <div className="finding-list">
+                {comparison.findings.length ? (
+                  comparison.findings.map((finding, index) => (
+                    <article className="finding" key={index}>
+                      <span className="finding-type">{finding.severity}</span>
+                      <strong>{finding.message}</strong>
+                      <small>
+                        {finding.path} · {finding.code}
+                      </small>
+                    </article>
+                  ))
+                ) : (
+                  <p>No compatibility findings detected.</p>
+                )}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </>
   );
 }
@@ -405,21 +569,34 @@ function ResourceList({ items, resource, onDelete, onToggle }) {
             </strong>
             <small>
               {resource === 'consumers'
-                ? `${item.handler} · ${item.enabled ? 'enabled' : 'disabled'}`
+                ? `${item.handlerType} · ${item.enabled ? 'enabled' : 'disabled'}`
                 : resource === 'fixtures'
                   ? item.description || 'Historical fixture'
                   : `Created ${new Date(item.createdAt).toLocaleDateString()}`}
             </small>
           </span>
-          <span className="row-actions">{resource === 'consumers' && <button className="quiet-button" onClick={() => onToggle(item)}>{item.enabled ? 'Disable' : 'Enable'}</button>}<button className="quiet-button danger-action" onClick={() => onDelete(item)}>Delete</button><span className="status-badge">
-            {resource === 'schemas'
-              ? 'SCHEMA'
-              : resource === 'fixtures'
-                ? 'FIXTURE'
-                : item.enabled
-                  ? 'ACTIVE'
-                  : 'PAUSED'}
-          </span></span>
+          <span className="row-actions">
+            {resource === 'consumers' && (
+              <button className="quiet-button" onClick={() => onToggle(item)}>
+                {item.enabled ? 'Disable' : 'Enable'}
+              </button>
+            )}
+            <button
+              className="quiet-button danger-action"
+              onClick={() => onDelete(item)}
+            >
+              Delete
+            </button>
+            <span className="status-badge">
+              {resource === 'schemas'
+                ? 'SCHEMA'
+                : resource === 'fixtures'
+                  ? 'FIXTURE'
+                  : item.enabled
+                    ? 'ACTIVE'
+                    : 'PAUSED'}
+            </span>
+          </span>
         </article>
       ))}
     </div>
@@ -582,7 +759,22 @@ function TestRunsPage({ workspace }) {
             >
               {selectedRun.outcome ?? selectedRun.status}
             </span>
-            {selectedRun.status === 'queued' && <button className="quiet-button danger-action" onClick={async () => { try { setSelectedRun(await cancelTestRun(workspace.projectId, selectedRun._id)); } catch (reason) { setError(reason.message); } }}>Cancel queued run</button>}
+            {selectedRun.status === 'queued' && (
+              <button
+                className="quiet-button danger-action"
+                onClick={async () => {
+                  try {
+                    setSelectedRun(
+                      await cancelTestRun(workspace.projectId, selectedRun._id),
+                    );
+                  } catch (reason) {
+                    setError(reason.message);
+                  }
+                }}
+              >
+                Cancel queued run
+              </button>
+            )}
           </div>
           {selectedRun.status === 'queued' ||
           selectedRun.status === 'running' ? (
@@ -660,14 +852,49 @@ function Overview({ workspace, health }) {
           </div>
         </div>
         <div className="event-map" aria-label="Event contract check flow">
-          <div className="map-topline"><span>CONTRACT PIPELINE</span><span>LIVE MAP</span></div>
-          <div className="map-node source-node"><span className="node-glyph">↗</span><span><strong>Event</strong><small>order.created</small></span></div>
-          <div className="map-rail"><i /></div>
-          <div className="map-node"><span className="node-glyph">◇</span><span><strong>Schema</strong><small>versioned contract</small></span><b className="node-state">01</b></div>
-          <div className="map-rail"><i /></div>
-          <div className="map-node"><span className="node-glyph">◎</span><span><strong>Consumers</strong><small>compatibility checks</small></span><b className="node-state">02</b></div>
-          <div className="map-rail"><i /></div>
-          <div className="map-node result-node"><span className="node-glyph">✓</span><span><strong>Replay report</strong><small>traceable result</small></span></div>
+          <div className="map-topline">
+            <span>CONTRACT PIPELINE</span>
+            <span>LIVE MAP</span>
+          </div>
+          <div className="map-node source-node">
+            <span className="node-glyph">↗</span>
+            <span>
+              <strong>Event</strong>
+              <small>order.created</small>
+            </span>
+          </div>
+          <div className="map-rail">
+            <i />
+          </div>
+          <div className="map-node">
+            <span className="node-glyph">◇</span>
+            <span>
+              <strong>Schema</strong>
+              <small>versioned contract</small>
+            </span>
+            <b className="node-state">01</b>
+          </div>
+          <div className="map-rail">
+            <i />
+          </div>
+          <div className="map-node">
+            <span className="node-glyph">◎</span>
+            <span>
+              <strong>Consumers</strong>
+              <small>compatibility checks</small>
+            </span>
+            <b className="node-state">02</b>
+          </div>
+          <div className="map-rail">
+            <i />
+          </div>
+          <div className="map-node result-node">
+            <span className="node-glyph">✓</span>
+            <span>
+              <strong>Replay report</strong>
+              <small>traceable result</small>
+            </span>
+          </div>
         </div>
       </section>
       <div className="overview-grid">
