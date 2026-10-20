@@ -10,6 +10,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
   redpanda:
     image: redpandadata/redpanda:v24.3.9
     command:
@@ -35,6 +36,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 20s
   api:
     restart: unless-stopped
     build:
@@ -42,11 +44,13 @@ services:
       dockerfile: server/Dockerfile
     command: ['npm', '--workspace', 'server', 'run', 'dev']
     environment:
-      PORT: 4000
-      CORS_ORIGIN: http://localhost:5173
+      PORT: ${PORT:-4000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       MONGODB_URI: mongodb://mongodb:27017/eventguard
       KAFKA_BROKERS: redpanda:9092
-      KAFKA_TOPIC: eventguard.test-runs
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-eventguard}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-eventguard.test-runs}
+      WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
     ports: ['4000:4000']
     depends_on:
       mongodb: { condition: service_healthy }
@@ -61,8 +65,10 @@ services:
     environment:
       MONGODB_URI: mongodb://mongodb:27017/eventguard
       KAFKA_BROKERS: redpanda:9092
-      KAFKA_TOPIC: eventguard.test-runs
-      KAFKA_GROUP_ID: eventguard-workers
+      KAFKA_CLIENT_ID: ${KAFKA_CLIENT_ID:-eventguard}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-eventguard.test-runs}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-eventguard-workers}
+      WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
     depends_on:
       mongodb: { condition: service_healthy }
       redpanda: { condition: service_healthy }
@@ -73,7 +79,7 @@ services:
       context: .
       dockerfile: client/Dockerfile
     environment:
-      VITE_API_URL: http://localhost:4000/api
+      VITE_API_BASE_URL: http://localhost:4000/api
     ports: ['5173:5173']
     depends_on: [api]
     volumes: ['./client:/app/client']

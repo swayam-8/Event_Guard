@@ -2,7 +2,18 @@
 
 ## Process boundaries
 
-The React/Vite client talks to an Express REST API. The API validates and persists resources in MongoDB, snapshots inputs for a test run, and publishes only the run ID to Kafka. A separate worker loads the persisted snapshot, executes deterministic checks, and writes an idempotent report. Redpanda provides the local Kafka-compatible broker.
+The React/Vite client talks to an Express REST API. The API validates and persists resources in MongoDB, snapshots inputs for a test run, and publishes a small versioned run/project message to Kafka. A separate worker loads the persisted snapshot, executes deterministic checks, and writes an idempotent report. Redpanda provides the local Kafka-compatible broker.
+
+```mermaid
+flowchart LR
+  UI[React and Vite] -->|REST| API[Express API]
+  API --> DB[(MongoDB)]
+  API -->|v1 job| K[Redpanda]
+  K --> W[Separate worker]
+  W --> E[Shared Phase 3 engine]
+  E --> DB
+  DB -->|poll status and report| UI
+```
 
 ## Trust and project isolation
 
@@ -12,7 +23,7 @@ The API returns structured errors without stack traces and logs operational cont
 
 ## Test-run lifecycle
 
-`queued → running → completed` or `failed`; a queued run can also become `cancelled`. Outcome (`pass`, `warning`, `fail`) is separate from execution status. `inputSnapshot` contains schema documents, consumers, and historical fixture payloads, so later edits do not change an existing run. Kafka delivery is at least once; an atomic conditional status update claims a run once, preventing duplicate results. Transient processing errors return the run to `queued` for up to three attempts. Malformed messages are copied to `<topic>.dlq` and committed, preserving the original message. Results and errors are persisted before committing a successful broker offset.
+`queued → running → completed` or `failed`; a queued run can also become `cancelled`. Outcome (`pass`, `warning`, `fail`) is separate from execution status. `inputSnapshot` contains schema documents, consumers, and historical fixture payloads, so later edits do not change an existing run. A Mongo-backed outbox recovers publications after API restarts. Kafka delivery is at least once; an atomic conditional status update claims a run once, preventing duplicate results. Transient processing errors return the run to `queued` for the configured bounded attempt count. Malformed messages and dangling run references are copied to `<topic>.dlq` and committed, preserving the original message. Results and errors are persisted before committing a successful broker offset.
 
 ## Deterministic engine
 

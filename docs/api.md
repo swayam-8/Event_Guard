@@ -152,4 +152,6 @@ Existing asynchronous test-run endpoints remain available; they require Redpanda
 - `GET /projects/:projectId/test-runs/:runId/results`
 - `POST /projects/:projectId/test-runs/:runId/cancel` (queued runs only)
 
+Creation persists a queued run and returns `202`. A Mongo-backed publication outbox retries broker send failures after restart; the run response reports `queueError` while publication is delayed. See [worker lifecycle](worker-lifecycle.md) for message contents, bounded retries, and dead-letter behavior.
+
 The core project/schema/consumer/fixture APIs need MongoDB but do not connect to Kafka. Authentication and authorization are not implemented; do not expose this local development API to untrusted users.

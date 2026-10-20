@@ -64,6 +64,14 @@ function Notice({ error }) {
 function Empty({ children }) {
   return <div className="empty-state">{children}</div>;
 }
+function RunState({ run }) {
+  return (
+    <span className="run-state-pair" aria-label={`Execution ${run.status}${run.outcome ? `, outcome ${run.outcome}` : ''}`}>
+      <span className={`status-badge execution-${run.status}`}>{run.status}</span>
+      {run.outcome && <span className={`status-badge outcome-${run.outcome}`}>{run.outcome}</span>}
+    </span>
+  );
+}
 function Field({ label, ...props }) {
   return (
     <label className="field">
@@ -205,6 +213,8 @@ function ResourcePage({ resource, workspace }) {
   const [error, setError] = useState('');
   const [eventName, setEventName] = useState('');
   const [name, setName] = useState('');
+  const [editingConsumerId, setEditingConsumerId] = useState('');
+  const [editingConsumer, setEditingConsumer] = useState(null);
   const [version, setVersion] = useState('1');
   const [handler, setHandler] = useState('order-validation');
   const [payload, setPayload] = useState(
@@ -253,8 +263,8 @@ function ResourcePage({ resource, workspace }) {
                 eventName,
                 expectedSchemaVersion: Number(version),
                 handlerType: handler,
-                enabled: true,
-                invariants: [],
+                enabled: editingConsumer?.enabled ?? true,
+                invariants: editingConsumer?.invariants ?? [],
               }
             : {
                 eventName,
@@ -262,8 +272,13 @@ function ResourcePage({ resource, workspace }) {
                 payload: JSON.parse(payload),
                 description: name,
               };
-      await createResource(workspace.projectId, resource, data);
+      if (resource === 'consumers' && editingConsumerId)
+        await updateConsumer(workspace.projectId, editingConsumerId, data);
+      else await createResource(workspace.projectId, resource, data);
       setName('');
+      setEventName('');
+      setEditingConsumerId('');
+      setEditingConsumer(null);
       await reload();
     } catch (reason) {
       setError(reason.response?.data?.error?.message ?? reason.message);
@@ -289,6 +304,14 @@ function ResourcePage({ resource, workspace }) {
     } catch (reason) {
       setError(reason.message);
     }
+  };
+  const editConsumer = (item) => {
+    setEditingConsumerId(item._id);
+    setEditingConsumer(item);
+    setName(item.name);
+    setEventName(item.eventName);
+    setVersion(String(item.expectedSchemaVersion));
+    setHandler(item.handlerType);
   };
   const validatePayload = async (event) => {
     event.preventDefault();
@@ -415,8 +438,9 @@ function ResourcePage({ resource, workspace }) {
             <button className="primary-button" disabled={saving}>
               {saving
                 ? 'Saving…'
-                : `Add ${resource === 'schemas' ? 'schema' : resource === 'consumers' ? 'consumer' : 'fixture'}`}
+                : `${editingConsumerId ? 'Save' : 'Add'} ${resource === 'schemas' ? 'schema' : resource === 'consumers' ? 'consumer' : 'fixture'}`}
             </button>
+            {editingConsumerId && <button type="button" className="quiet-button" onClick={() => { setEditingConsumerId(''); setEditingConsumer(null); setName(''); setEventName(''); }}>Cancel edit</button>}
           </form>
         </section>
         <section className="panel">
@@ -434,6 +458,7 @@ function ResourcePage({ resource, workspace }) {
               resource={resource}
               onDelete={removeItem}
               onToggle={toggleConsumer}
+              onEdit={editConsumer}
             />
           ) : (
             <Empty>No {title.toLowerCase()} in this project yet.</Empty>
@@ -555,7 +580,7 @@ function ResourcePage({ resource, workspace }) {
   );
 }
 
-function ResourceList({ items, resource, onDelete, onToggle }) {
+function ResourceList({ items, resource, onDelete, onToggle, onEdit }) {
   return (
     <div className="list">
       {items.map((item) => (
@@ -577,6 +602,9 @@ function ResourceList({ items, resource, onDelete, onToggle }) {
             </small>
           </span>
           <span className="row-actions">
+            {resource === 'consumers' && (
+              <button className="quiet-button" onClick={() => onEdit(item)}>Edit</button>
+            )}
             {resource === 'consumers' && (
               <button className="quiet-button" onClick={() => onToggle(item)}>
                 {item.enabled ? 'Disable' : 'Enable'}
@@ -613,6 +641,7 @@ function TestRunsPage({ workspace }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedRun, setSelectedRun] = useState(null);
+  const report = selectedRun?.report ?? (selectedRun?.mode === 'synchronous-preview' ? selectedRun : null);
   const reload = async () => {
     if (!workspace.projectId) return;
     try {
@@ -767,9 +796,7 @@ function TestRunsPage({ workspace }) {
                     </strong>
                     <small>{new Date(run.createdAt).toLocaleString()}</small>
                   </span>
-                  <span className={`status-badge ${run.outcome ?? run.status}`}>
-                    {run.outcome ?? run.status}
-                  </span>
+                  <RunState run={run} />
                 </button>
               ))}
             </div>
@@ -790,11 +817,7 @@ function TestRunsPage({ workspace }) {
                 {selectedRun.toVersion}
               </h2>
             </div>
-            <span
-              className={`status-badge ${selectedRun.outcome ?? selectedRun.status}`}
-            >
-              {selectedRun.outcome ?? selectedRun.status}
-            </span>
+            <RunState run={selectedRun} />
             {selectedRun.status === 'queued' && (
               <button
                 className="quiet-button danger-action"
@@ -814,12 +837,21 @@ function TestRunsPage({ workspace }) {
           </div>
           {selectedRun.status === 'queued' ||
           selectedRun.status === 'running' ? (
-            <Empty>
-              Worker is processing this run. This report refreshes
-              automatically.
-            </Empty>
+            <>
+              {selectedRun.queueError && <div className="notice error">{selectedRun.queueError}</div>}
+              <Empty>
+                {selectedRun.status === 'queued' ? 'Run is queued for the background worker.' : 'Worker is processing this run.'} This report refreshes automatically.
+              </Empty>
+            </>
           ) : (
             <>
+              <div className="report-meta-grid">
+                <div><small>EXECUTION</small><strong>{selectedRun.status}</strong></div>
+                <div><small>TEST OUTCOME</small><strong>{selectedRun.outcome ?? 'Not available'}</strong></div>
+                <div><small>RUN ID</small><code>{selectedRun._id ?? 'Preview'}</code></div>
+                <div><small>DURATION</small><strong>{selectedRun.durationMs == null ? '—' : `${selectedRun.durationMs} ms`}</strong></div>
+              </div>
+              {selectedRun.errorMessage && <div className="notice error">{selectedRun.errorMessage}</div>}
               <div className="stat-grid">
                 {Object.entries(selectedRun.summary ?? {}).map(
                   ([key, value]) => (
@@ -861,6 +893,26 @@ function TestRunsPage({ workspace }) {
                   </article>
                 ))}
               </div>
+              {report && (
+                <div className="report-details">
+                  <section>
+                    <h3>Schema compatibility</h3>
+                    <p>{report.compatibility?.compatible ? 'No breaking compatibility finding was confirmed.' : 'Compatibility analysis found risks for this schema change.'} {report.compatibility?.analysisComplete === false && 'Analysis is incomplete; review the warnings below.'}</p>
+                    {(report.compatibility?.findings ?? []).map((finding, index) => <article className="finding" key={`compat-${index}`}><span className="finding-type">{finding.severity}</span><strong>{finding.message}</strong><small>{finding.path} · {finding.code}</small></article>)}
+                  </section>
+                  <section>
+                    <h3>Historical fixture replay</h3>
+                    {report.fixtures?.length ? report.fixtures.map((fixture, index) => <details className="fixture-detail" key={fixture.fixtureId ?? index}>
+                      <summary><span>{fixture.fixtureId ?? 'Fixture'} · {fixture.outcome}</span><small>v{fixture.originalSchemaVersion} → v{fixture.targetSchemaVersion}{fixture.preExistingInvalid ? ' · pre-existing invalid' : ''}</small></summary>
+                      <div className="fixture-detail-body">
+                        <p>Source schema: {fixture.schemaValidation?.original ?? 'not checked'} · Target schema: {fixture.schemaValidation?.target ?? 'not checked'}</p>
+                        {(fixture.findings ?? []).map((item, findingIndex) => <p className="detail-finding" key={findingIndex}><strong>{item.code}</strong> · {item.path} · {item.message}</p>)}
+                        {(fixture.consumerResults ?? []).map((consumer, consumerIndex) => <p className="detail-finding" key={consumer.consumerId ?? consumerIndex}>Consumer {consumer.name ?? consumer.consumerId}: {consumer.outcome} · {consumer.handlerType}{consumer.findings?.length ? ` · ${consumer.findings.map((item) => item.message).join('; ')}` : ''}</p>)}
+                      </div>
+                    </details>) : <Empty>No historical fixtures were available for replay.</Empty>}
+                  </section>
+                </div>
+              )}
             </>
           )}
         </section>
@@ -870,6 +922,24 @@ function TestRunsPage({ workspace }) {
 }
 
 function Overview({ workspace, health }) {
+  const [recentRuns, setRecentRuns] = useState([]);
+  const [projectCounts, setProjectCounts] = useState(null);
+  useEffect(() => {
+    if (!workspace.projectId) {
+      setRecentRuns([]);
+      setProjectCounts(null);
+      return undefined;
+    }
+    let current = true;
+    Promise.all(['schemas', 'consumers', 'fixtures', 'test-runs'].map((kind) => getResource(workspace.projectId, kind)))
+      .then(([schemas, consumers, fixtures, runs]) => {
+        if (!current) return;
+        setRecentRuns(runs.slice(0, 5));
+        setProjectCounts({ schemas: schemas.length, consumers: consumers.length, fixtures: fixtures.length });
+      })
+      .catch((reason) => { if (current) workspace.setError(reason.message); });
+    return () => { current = false; };
+  }, [workspace.projectId]);
   return (
     <>
       <Notice error={workspace.error} />
@@ -890,7 +960,7 @@ function Overview({ workspace, health }) {
         <div className="event-map" aria-label="Event contract check flow">
           <div className="map-topline">
             <span>CONTRACT PIPELINE</span>
-            <span>LIVE MAP</span>
+            <span>PIPELINE MAP</span>
           </div>
           <div className="map-node source-node">
             <span className="node-glyph">↗</span>
@@ -959,6 +1029,29 @@ function Overview({ workspace, health }) {
           </p>
         </div>
       </div>
+      {workspace.projectId && (
+        <section className="panel recent-runs-panel">
+          <div className="project-count-strip">
+            {Object.entries(projectCounts ?? { schemas: '…', consumers: '…', fixtures: '…' }).map(([label, count]) => <div key={label}><strong>{count}</strong><small>{label}</small></div>)}
+          </div>
+          <div className="quick-links">
+            <NavLink to="/schemas">Register schema</NavLink>
+            <NavLink to="/consumers">Add consumer</NavLink>
+            <NavLink to="/fixtures">Add fixture</NavLink>
+            <NavLink to="/test-runs">Launch a test run</NavLink>
+          </div>
+          <div className="panel-title-row">
+            <div><span className="eyebrow">SELECTED PROJECT</span><h2>Recent test runs</h2></div>
+            <NavLink className="quiet-button" to="/test-runs">View test runs</NavLink>
+          </div>
+          {recentRuns.length ? <div className="list">{recentRuns.map((run) => (
+            <div className="list-row" key={run._id}>
+              <span><strong>{run.eventName} · v{run.fromVersion} → v{run.toVersion}</strong><small>{new Date(run.createdAt).toLocaleString()}</small></span>
+              <RunState run={run} />
+            </div>
+          ))}</div> : <Empty>No test runs for this project yet. Register two schema versions, then launch a replay.</Empty>}
+        </section>
+      )}
     </>
   );
 }
@@ -1040,9 +1133,6 @@ export default function App() {
             <span className="local-tag">
               <span /> LOCAL ENVIRONMENT
             </span>
-            <button className="avatar-button" aria-label="Local profile">
-              L
-            </button>
           </div>
         </header>
         <div className="page-content">

@@ -1,6 +1,6 @@
 # EventGuard
 
-EventGuard is a local developer tool for finding potentially unsafe changes to event-driven backend systems before deployment. Register versioned JSON Schemas, consumers using a safe handler registry, and historical event fixtures. Run deterministic checks and inspect persisted reports before shipping a schema change.
+EventGuard is a local developer platform for finding potentially unsafe changes to event-driven backend systems before deployment. Register versioned JSON Schemas, consumers using a safe handler registry, and historical event fixtures. Queue deterministic checks through Redpanda, replay saved events in a separate worker, and inspect persisted reports before shipping a schema change.
 
 > EventGuard is a local development MVP. It is not production-ready for multiple untrusted customers. Do not expose it publicly without authentication, authorization, tenant isolation, rate limiting, secure secret management, and audit logging.
 
@@ -61,11 +61,11 @@ React / Vite ── REST/JSON ──> Express API ──> MongoDB
                                                         └──> MongoDB report
 ```
 
-- **API:** validates input, scopes every resource query to its project, persists immutable run inputs, and publishes only a test-run ID to Kafka.
+- **API:** validates input, scopes every resource query to its project, persists immutable run inputs, and publishes a versioned run/project message through a Mongo-backed outbox.
 - **MongoDB:** stores projects, schemas, consumers, fixtures, run snapshots, and reports. Indexes enforce schema version and resource uniqueness.
-- **Worker:** claims queued runs atomically, validates snapshots with AJV, compares schema shapes, executes built-in handlers, checks declarative invariants, and persists detailed results.
-- **Broker:** Kafka-compatible Redpanda transports jobs. Processing is idempotent for duplicate delivery; failed processing is retried up to three times. Malformed jobs are preserved in the `.dlq` topic.
-- **Frontend:** calls the REST API and polls queued/running test runs. It displays API errors and empty states rather than substituting fake records.
+- **Worker:** validates a versioned job envelope, claims queued runs atomically, reuses the Phase 3 engine, executes built-in handlers, checks declarative invariants, and persists detailed results before acknowledging Kafka.
+- **Broker:** Kafka-compatible Redpanda transports jobs. The Mongo-backed outbox retries publications after failure or API restart. Processing is idempotent for duplicate delivery; execution retries are bounded by `WORKER_MAX_ATTEMPTS` (default three). Malformed jobs are preserved in the `.dlq` topic.
+- **Frontend:** provides project, schema, consumer, fixture, and test-run workflows using live API data. It polls queued/running runs and displays execution status separately from test outcome.
 
 Schema comparison findings are deterministic heuristics, not proof of application compatibility. Payload validity and registered handler outcomes are deterministic.
 
@@ -95,6 +95,9 @@ API responses use `{ "success": true, "data": ... }` or `{ "success": false, "er
 | Command          | Purpose                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
 | `npm run dev`    | API, worker, and client in watch mode; start MongoDB and Redpanda first |
+| `npm run dev:server` | API only |
+| `npm run dev:worker` | Background worker only |
+| `npm run dev:client` | Vite frontend only |
 | `npm run build`  | Production build of the React dashboard                                 |
 | `npm test`       | Vitest unit and API integration suites                                  |
 | `npm run lint`   | ESLint across API, tests, and client                                    |
@@ -119,5 +122,5 @@ All child-resource operations are scoped to the requested project. Test-run outc
 - Consumer handlers are predefined; users cannot upload code. Invariants use the explicit safe allowlist documented in [the API guide](docs/api.md).
 - Compatibility analysis proves only selected JSON Schema changes; warnings mark unsupported constructs and the engine does not prove consumer behavior beyond registered handlers and invariants.
 - Worker execution is at-least-once from Kafka with database state guards and three processing attempts. The local MVP does not include an admin UI for inspecting or replaying dead-letter messages.
-- Automated coverage focuses on the schema engine, handlers, and API validation. Full containerized end-to-end verification depends on Docker services being available.
+- Automated coverage includes deterministic engine and worker-message tests plus API endpoint tests. Full containerized end-to-end verification depends on Docker services being available.
 - GitHub Actions integration is a future milestone; the REST API provides a foundation for CI checks.

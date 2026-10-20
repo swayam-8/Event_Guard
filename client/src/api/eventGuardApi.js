@@ -1,12 +1,28 @@
 import client from './apiClient';
 
-export const getProjects = async () => (await client.get('/projects')).items;
+export const getProjects = async () => {
+  const first = await client.get('/projects', { params: { page: 1, limit: 100 } });
+  const items = [...first.items];
+  for (let page = 2; items.length < first.total; page += 1) {
+    const next = await client.get('/projects', { params: { page, limit: 100 } });
+    items.push(...next.items);
+  }
+  return items;
+};
 export const createProject = (data) => client.post('/projects', data);
 export const updateProject = (projectId, data) =>
   client.patch(`/projects/${projectId}`, data);
 export const deleteProject = (projectId) => client.delete(`/projects/${projectId}`);
-export const getResource = async (projectId, resource) =>
-  (await client.get(`/projects/${projectId}/${resource}`)).items;
+export const getResource = async (projectId, resource) => {
+  const path = `/projects/${projectId}/${resource}`;
+  const first = await client.get(path, { params: { page: 1, limit: 100 } });
+  const items = [...first.items];
+  for (let page = 2; items.length < first.total; page += 1) {
+    const next = await client.get(path, { params: { page, limit: 100 } });
+    items.push(...next.items);
+  }
+  return items;
+};
 export const createResource = (projectId, resource, data) =>
   client.post(`/projects/${projectId}/${resource}`, data);
 export const deleteResource = (projectId, resource, resourceId) =>

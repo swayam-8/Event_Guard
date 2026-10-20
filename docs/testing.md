@@ -8,7 +8,9 @@ npm run lint
 npm run build
 ```
 
-The default Vitest suite is deterministic and isolated. API endpoint tests, including synchronous preview, use Supertest with mocked persistence. Engine tests cover old-to-new compatibility direction, unknown schema constructs, fixture source/target validation, pre-existing invalid fixtures, cross-project rejection, built-in handlers, invariant outcomes, report statuses, and payload immutability without starting MongoDB, Kafka, or the frontend.
+Phase 4 verification in the current workspace: `npm test` passed (63 passed, 1 optional MongoDB test skipped); `npm run lint`, `npm run build`, `docker compose config --quiet`, and `git diff --check` passed. Docker Compose startup and the real Kafka/Mongo/UI end-to-end flow were not run because the Docker Desktop engine was unavailable.
+
+The default Vitest suite is deterministic and isolated. API endpoint tests, including synchronous preview, use Supertest with mocked persistence. Engine tests cover old-to-new compatibility direction, unknown schema constructs, fixture source/target validation, pre-existing invalid fixtures, cross-project rejection, built-in handlers, invariant outcomes, report statuses, payload immutability, and the versioned worker-message contract without starting MongoDB, Kafka, or the frontend.
 
 To manually preview a run against the seeded sample project, find its ID from `GET /api/projects`, then send:
 
@@ -37,4 +39,4 @@ POSIX shell:
 MONGODB_TEST_URI=mongodb://localhost:27017/eventguard_test npm test
 ```
 
-For a local MongoDB container, start it with `docker compose up -d mongodb`. Full application and worker checks require the complete Compose stack (`docker compose up --build -d`) and should be followed by `docker compose ps` and service log review. Test-run processing also requires Redpanda; core CRUD tests do not.
+For a local MongoDB container, start it with `docker compose up -d mongodb`. Full application and worker checks require the complete Compose stack (`docker compose up --build -d`) and should be followed by `docker compose ps` and service log review. Test-run processing also requires Redpanda; core CRUD tests do not. The container end-to-end flow has not been run in environments without a Docker engine.

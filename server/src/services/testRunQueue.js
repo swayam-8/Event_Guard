@@ -1,11 +1,9 @@
 import { Kafka } from 'kafkajs';
+import { env } from '../config/env.js';
 
-const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:9092')
-  .split(',')
-  .map((broker) => broker.trim());
 const kafka = new Kafka({
-  clientId: 'eventguard-api',
-  brokers,
+  clientId: env.kafkaClientId,
+  brokers: env.kafkaBrokers,
   retry: { initialRetryTime: 300, retries: 5 },
 });
 let producerPromise;
@@ -24,12 +22,20 @@ async function producer() {
   }
 }
 
-export async function enqueueTestRun(runId) {
+export async function enqueueTestRun({ runId, projectId, createdAt = new Date() }) {
   const client = await producer();
   await client.send({
-    topic: process.env.KAFKA_TOPIC ?? 'eventguard.test-runs',
+    topic: env.kafkaTopic,
     acks: -1,
-    messages: [{ key: runId, value: JSON.stringify({ runId }) }],
+    messages: [{
+      key: runId,
+      value: JSON.stringify({
+        version: 1,
+        runId,
+        projectId: String(projectId),
+        createdAt: new Date(createdAt).toISOString(),
+      }),
+    }],
   });
 }
 

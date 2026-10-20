@@ -156,6 +156,10 @@ export const TestRun = mongoose.model(
         index: true,
       },
       attempts: { type: Number, default: 0 },
+      queuePublishedAt: Date,
+      queueAttempts: { type: Number, default: 0 },
+      queueNextAttemptAt: Date,
+      queueError: String,
       outcome: {
         type: String,
         enum: ['pass', 'warning', 'fail'],
@@ -163,6 +167,7 @@ export const TestRun = mongoose.model(
       },
       inputSnapshot: { type: Schema.Types.Mixed, required: true },
       results: { type: [Schema.Types.Mixed], default: [] },
+      report: { type: Schema.Types.Mixed, default: null },
       summary: { type: Schema.Types.Mixed, default: {} },
       startedAt: Date,
       completedAt: Date,
@@ -170,5 +175,6 @@ export const TestRun = mongoose.model(
       errorMessage: String,
     },
     options,
-  ).index({ projectId: 1, createdAt: -1 }),
+  ).index({ projectId: 1, createdAt: -1 })
+    .index({ status: 1, queuePublishedAt: 1, queueNextAttemptAt: 1 }),
 );

@@ -2,10 +2,13 @@ import { env } from './config/env.js';
 import { createApp } from './app.js';
 import { connectDatabase } from './config/database.js';
 import { closeQueue } from './services/testRunQueue.js';
+import { recoverPendingTestRunPublications } from './services/testRunService.js';
 
 let stopping = false;
 let retryTimer;
 let retryDelay = 1000;
+let outboxTimer;
+let outboxBusy = false;
 
 const server = createApp().listen(env.port, () => {
   console.info(
@@ -21,6 +24,20 @@ async function connectWithRetry() {
   try {
     await connectDatabase(env.mongoUri);
     retryDelay = 1000;
+    if (!outboxTimer) {
+      outboxTimer = setInterval(async () => {
+        if (outboxBusy || stopping) return;
+        outboxBusy = true;
+        try {
+          await recoverPendingTestRunPublications();
+        } catch {
+          console.error(JSON.stringify({ level: 'error', message: 'Test-run outbox recovery failed.' }));
+        } finally {
+          outboxBusy = false;
+        }
+      }, 5000);
+      outboxTimer.unref();
+    }
     console.info(
       JSON.stringify({ level: 'info', message: 'MongoDB connected' }),
     );
@@ -43,6 +60,7 @@ void connectWithRetry();
 const shutdown = () => {
   stopping = true;
   clearTimeout(retryTimer);
+  clearInterval(outboxTimer);
   server.close(async () => {
     try {
       await closeQueue();

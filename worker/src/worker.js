@@ -1,15 +1,17 @@
-import { config } from 'dotenv';
-import { fileURLToPath } from 'node:url';
-config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
+import 'dotenv/config';
 import { Kafka } from 'kafkajs';
 import mongoose from 'mongoose';
-import { processTestRun, validRunId } from './jobs/testRunProcessor.js';
+import { maxAttempts, processTestRun, validateJobMessage } from './jobs/testRunProcessor.js';
 
 const brokers = (process.env.KAFKA_BROKERS ?? 'localhost:9092')
   .split(',')
-  .map((broker) => broker.trim());
+  .map((broker) => broker.trim())
+  .filter(Boolean);
+if (!brokers.length) throw new Error('KAFKA_BROKERS must contain at least one broker.');
+if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 10)
+  throw new Error('WORKER_MAX_ATTEMPTS must be an integer from 1 to 10.');
 const kafka = new Kafka({
-  clientId: 'eventguard-worker',
+  clientId: `${process.env.KAFKA_CLIENT_ID ?? 'eventguard'}-worker`,
   brokers,
   retry: { initialRetryTime: 300, retries: 10 },
 });
@@ -70,23 +72,27 @@ await consumer.run({
       await deadLetter(topic, partition, message);
       return;
     }
-    if (!validRunId(job.runId)) {
+    if (!validateJobMessage(job)) {
       await deadLetter(topic, partition, message);
       return;
     }
     try {
-      await processTestRun(job.runId);
+      await processTestRun(job.runId, job.projectId);
       await consumer.commitOffsets([
         { topic, partition, offset: (BigInt(message.offset) + 1n).toString() },
       ]);
     } catch (error) {
+      if (error?.code === 'INVALID_RUN_REFERENCE') {
+        await deadLetter(topic, partition, message);
+        return;
+      }
       console.error(
         JSON.stringify({
           level: 'error',
           message:
-            'Worker job failed; Kafka will retry according to consumer policy.',
+          'Worker processing failed; the persisted run state determines bounded retries.',
           offset: message.offset,
-          reason: error.message,
+          reason: error?.code ?? error?.name ?? 'PROCESSING_ERROR',
         }),
       );
       await heartbeat();
@@ -95,11 +101,16 @@ await consumer.run({
   },
 });
 
+let shutdownPromise;
 async function shutdown() {
-  await consumer.disconnect();
-  await deadLetterProducer.disconnect();
-  await mongoose.disconnect();
-  process.exit(0);
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    await consumer.stop();
+    await consumer.disconnect();
+    await deadLetterProducer.disconnect();
+    await mongoose.disconnect();
+  })();
+  return shutdownPromise;
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+process.on('SIGINT', () => { void shutdown(); });
+process.on('SIGTERM', () => { void shutdown(); });

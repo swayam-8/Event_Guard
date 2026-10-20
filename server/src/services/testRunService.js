@@ -8,25 +8,16 @@ import { enqueueTestRun } from './testRunQueue.js';
 import {
   HttpError,
   pagination,
-  positiveInteger,
-  requiredString,
   validateObjectId,
 } from '../utils/http.js';
 import { requireProject } from './resourceService.js';
 import { EngineInputError, replayFixtures } from '../../../worker/src/engine/fixtureRunner.js';
 import { buildReport } from '../../../worker/src/engine/reportBuilder.js';
+import { validatePreviewBody } from '../validators/requests.js';
 
 export async function createTestRun(projectId, body) {
+  const { eventName, fromVersion, toVersion } = validatePreviewBody(body);
   await requireProject(projectId);
-  const eventName = requiredString(body?.eventName, 'eventName', 160);
-  const fromVersion = positiveInteger(body?.fromVersion, 'fromVersion');
-  const toVersion = positiveInteger(body?.toVersion, 'toVersion');
-  if (fromVersion >= toVersion)
-    throw new HttpError(
-      400,
-      'VALIDATION_ERROR',
-      'toVersion must be greater than fromVersion.',
-    );
   const schemas = await EventSchema.find({
     projectId,
     eventName,
@@ -50,6 +41,7 @@ export async function createTestRun(projectId, body) {
     toVersion,
     inputSnapshot: {
       schemas: schemas.map((schema) => ({
+        eventName: schema.eventName,
         version: schema.version,
         schemaDefinition: schema.schemaDefinition,
       })),
@@ -57,20 +49,37 @@ export async function createTestRun(projectId, body) {
       fixtures,
     },
   });
+  await publishTestRun(run);
+  return TestRun.findById(run.id);
+}
+
+export async function publishTestRun(run) {
+  if (!run || run.status !== 'queued' || run.queuePublishedAt) return run;
   try {
-    await enqueueTestRun(run.id);
-  } catch {
-    await TestRun.findByIdAndUpdate(run.id, {
-      status: 'failed',
-      errorMessage: 'Unable to publish test run to broker.',
-    });
-    throw new HttpError(
-      503,
-      'BROKER_UNAVAILABLE',
-      'The test run was saved but could not be queued. Check the worker and broker.',
+    await enqueueTestRun({ runId: run.id, projectId: run.projectId, createdAt: run.createdAt });
+    return TestRun.findOneAndUpdate(
+      { _id: run.id, status: 'queued', queuePublishedAt: null },
+      { $set: { queuePublishedAt: new Date(), queueError: null, queueNextAttemptAt: null }, $inc: { queueAttempts: 1 } },
+      { new: true },
     );
+  } catch {
+    const queueAttempts = (run.queueAttempts ?? 0) + 1;
+    const delayMs = Math.min(60000, 1000 * 2 ** Math.min(queueAttempts - 1, 6));
+    await TestRun.findOneAndUpdate(
+      { _id: run.id, status: 'queued', queuePublishedAt: null },
+      { $set: { queueError: 'Broker unavailable; automatic publication retry is scheduled.', queueNextAttemptAt: new Date(Date.now() + delayMs) }, $inc: { queueAttempts: 1 } },
+    );
+    return TestRun.findById(run.id);
   }
-  return run;
+}
+
+export async function recoverPendingTestRunPublications() {
+  const pending = await TestRun.find({
+    status: 'queued', queuePublishedAt: null,
+    $or: [{ queueNextAttemptAt: null }, { queueNextAttemptAt: { $lte: new Date() } }],
+  }).sort({ createdAt: 1 }).limit(100);
+  for (const run of pending) await publishTestRun(run);
+  return pending.length;
 }
 
 /** Synchronous, non-persistent engine preview for local development and tests. */
@@ -132,7 +141,7 @@ export async function getTestRun(projectId, runId, resultsOnly = false) {
   await requireProject(projectId);
   validateObjectId(runId, 'Test run');
   let query = TestRun.findOne({ _id: runId, projectId });
-  if (resultsOnly) query = query.select('results summary outcome status');
+  if (resultsOnly) query = query.select('results report summary outcome status errorMessage');
   const run = await query;
   if (!run)
     throw new HttpError(
