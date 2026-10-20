@@ -3,14 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["client", "server"],
+  "workspaces": [
+    "client",
+    "server",
+    "worker",
+    "shared"
+  ],
   "scripts": {
-    "dev": "concurrently -n api,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev": "concurrently -n api,worker,client -c blue,yellow,green \"npm:dev:server\" \"npm:dev:worker\" \"npm:dev:client\"",
     "dev:server": "npm --workspace server run dev",
+    "dev:worker": "node --watch worker/src/worker.js",
+    "seed": "node scripts/seed.js",
     "dev:client": "npm --workspace client run dev",
     "build": "npm --workspace client run build",
-    "test": "npm --workspace server test && npm --workspace client test",
-    "lint": "npm --workspace server run lint && npm --workspace client run lint",
+    "test": "npm --workspace server test",
+    "lint": "npm --workspace server run lint && npm --workspace client run lint && eslint worker/src shared/src",
     "format": "prettier --write ."
   },
   "devDependencies": {

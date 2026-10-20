@@ -1,74 +1,109 @@
 # EventGuard
 
-EventGuard is a local developer tool for finding potentially unsafe changes to event-driven backends before deployment. It will register versioned event schemas, consumers, and historical fixtures, then run deterministic compatibility checks and replay fixtures against safe, predefined handlers.
+EventGuard is a local developer tool for finding potentially unsafe changes to event-driven backend systems before deployment. Register versioned JSON Schemas, consumers using a safe handler registry, and historical event fixtures. Run deterministic checks and inspect persisted reports before shipping a schema change.
 
-> **Status:** Phase 1 starter. The API health endpoint, MongoDB connection, and navigable React shell are implemented. CRUD, compatibility checks, worker processing, and reports are planned, not yet available. EventGuard is a local development tool and is not production-ready for multiple untrusted customers.
+> EventGuard is a local development MVP. It is not production-ready for multiple untrusted customers. Do not expose it publicly without authentication, authorization, tenant isolation, rate limiting, secure secret management, and audit logging.
 
 ## Prerequisites
 
 - Node.js 20 or newer and npm
-- Docker Desktop (for MongoDB)
+- Docker Desktop with Docker Compose
 
-## Quick start
+## Start the full local stack
 
-1. Copy `.env.example` to `.env` and adjust values if needed.
-2. Start MongoDB: `docker compose up -d mongodb`
-3. Install packages: `npm install`
-4. Start API and frontend: `npm run dev`
-5. Open <http://localhost:5173>. The API health check is at <http://localhost:4000/api/health>.
+```sh
+docker compose up --build -d
+npm install
+npm run seed
+```
 
-The API reports `503` until MongoDB is reachable. Frontend navigation is present, but unfinished feature pages are explicitly marked as planned.
+Open the dashboard at <http://localhost:5173>. The API is at <http://localhost:4000/api> and the health endpoint is <http://localhost:4000/api/health>.
+
+The demo seed is safe to run more than once. It creates an `EventGuard Demo` project with `order.created` schema versions 1 and 2, an order-validation consumer, and representative historical fixtures. Its v1 decimal order is valid under v1 but fails v2 validation, which demonstrates deterministic replay. The `fixtures/order-created-v2-breaking.json` payload is an intentionally invalid payload for trying the schema validation endpoint; invalid payloads cannot be saved as fixtures.
+
+To stop the stack, run `docker compose down`. Use `docker compose down -v` only when you intentionally want to remove local MongoDB and Redpanda data.
+
+### Run services directly with Node
+
+Start infrastructure first:
+
+```sh
+docker compose up -d mongodb redpanda
+npm install
+npm run seed
+npm run dev
+```
+
+`npm run dev` starts the API, Kafka worker, and Vite client. Copy `.env.example` to `.env` to override the local defaults. The web UI only accepts the configured CORS origin (`CORS_ORIGIN`, default `http://localhost:5173`).
 
 ## Architecture
 
 ```text
-React + Vite  ── REST/JSON ──>  Express API  ──> MongoDB
-                                         └──> Kafka-compatible broker (planned)
+React / Vite ── REST/JSON ──> Express API ──> MongoDB
+                                      │
+                                      └── KafkaJS ──> Redpanda
                                                         │
                                                         v
-                                               Separate worker (planned)
+                                               EventGuard worker
+                                                        │
+                                                        └──> MongoDB report
 ```
 
-The API owns request validation and persistence. The worker will execute deterministic checks and store reproducible reports. KafkaJS and a Kafka-compatible broker will be introduced with asynchronous test runs; the MVP will not execute user-submitted JavaScript or depend on an AI service for test outcomes.
+- **API:** validates input, scopes every resource query to its project, persists immutable run inputs, and publishes only a test-run ID to Kafka.
+- **MongoDB:** stores projects, schemas, consumers, fixtures, run snapshots, and reports. Indexes enforce schema version and resource uniqueness.
+- **Worker:** claims queued runs atomically, validates snapshots with AJV, compares schema shapes, executes built-in handlers, checks declarative invariants, and persists detailed results.
+- **Broker:** Kafka-compatible Redpanda transports jobs. Processing is idempotent for duplicate delivery; failed processing is retried up to three times. Malformed jobs are preserved in the `.dlq` topic.
+- **Frontend:** calls the REST API and polls queued/running test runs. It displays API errors and empty states rather than substituting fake records.
 
-See [architecture notes](docs/architecture.md) and the original [project specification](PROJECT_SPEC.md).
+Schema comparison findings are deterministic heuristics, not proof of application compatibility. Payload validity and registered handler outcomes are deterministic.
 
-## API
-
-All API responses use `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": ..., "message": ... } }`.
-
-```sh
-curl http://localhost:4000/api/health
-```
-
-`GET /api/health` returns `200` when MongoDB is connected and `503` when it is not. CRUD and test-run endpoints are planned.
+See [architecture](docs/architecture.md), [API guide](docs/api.md), and [testing guide](docs/testing.md).
 
 ## Demonstration workflow
 
-The complete project workflow is not available yet. Once implemented, the demo will create a project, register two versions of an event schema, add a predefined consumer and historical fixtures, start a test run, and inspect a persisted report showing any breaking changes or replay failures.
+1. Open **Projects** and select `EventGuard Demo`.
+2. Open **Event schemas** and confirm `order.created` versions 1 and 2 are present.
+3. Open **Consumers** and confirm the `Order fulfillment` consumer.
+4. Open **Historical fixtures** and inspect the v1 and v2 events.
+5. Open **Test runs**, use event name `order.created`, versions `1` and `2`, and start a run.
+6. Wait for the report to complete. It should show a compatibility warning for the new required `currency` field and a failed replay of the old decimal event against v2.
 
-## Tests and quality checks
+For a direct API check:
 
-- `npm test` — planned as Vitest unit and API integration suites.
-- `npm run lint` — planned ESLint checks.
-- `npm run build` — builds the frontend.
-- `npm run format` — formats tracked project files with Prettier.
+```sh
+curl -s http://localhost:4000/api/health
+curl -s http://localhost:4000/api/projects
+```
 
-Phase 1 provides a production build; the remaining quality tooling and test suites will be added with their relevant implementation phases.
+API responses use `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": ..., "message": ... } }`. List endpoints accept `page` and `limit` (maximum 100).
 
-## Current limitations and security
+## Development commands
 
-- Only the health endpoint is implemented; the other API routes and all data workflows are planned.
-- MongoDB and the broker must be available locally; the worker and Kafka-compatible broker are not part of this starter phase.
-- There is no authentication, authorization, tenant isolation, rate limiting, or audit log. Do not expose this development service to untrusted users.
-- Before public deployment, add authentication, authorization, tenant isolation, rate limiting, secure secret management, and appropriate audit logging.
+| Command          | Purpose                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `npm run dev`    | API, worker, and client in watch mode; start MongoDB and Redpanda first |
+| `npm run build`  | Production build of the React dashboard                                 |
+| `npm test`       | Vitest unit and API integration suites                                  |
+| `npm run lint`   | ESLint across API, tests, and client                                    |
+| `npm run format` | Format project files with Prettier                                      |
+| `npm run seed`   | Idempotently seed the local demonstration project                       |
 
-## Development phases
+## API overview
 
-1. Repository setup, configuration, database connection, health endpoint, and basic React layout.
-2. Project, schema, consumer, and fixture CRUD APIs with validation and tests.
-3. Deterministic compatibility engine and historical fixture runner.
-4. Broker, worker, asynchronous test runs, and persisted reports.
-5. Connect frontend workflows to the REST API.
-6. Integration tests, Docker Compose, documentation, and end-to-end demo.
-7. Security review, simplification, and clean local setup verification.
+- `GET /api/health`
+- Projects: `POST/GET /api/projects`, `GET/PATCH/DELETE /api/projects/:projectId`
+- Schemas: create/list/get under `/api/projects/:projectId/schemas`; validate with `POST .../:schemaId/validate`; compare with `POST .../compare`
+- Consumers: create/list/get/patch/delete under `/api/projects/:projectId/consumers`
+- Fixtures: create/list/get/delete under `/api/projects/:projectId/fixtures`
+- Test runs: create/list/get under `/api/projects/:projectId/test-runs`; results at `/:runId/results`; cancel queued runs at `/:runId/cancel`
+
+All child-resource operations are scoped to the requested project. Test-run outcomes (`pass`, `warning`, `fail`) are distinct from execution statuses (`queued`, `running`, `completed`, `failed`, `cancelled`). A completed run with findings has completed execution status and a fail or warning outcome.
+
+## Current limitations
+
+- Local development only: there is no authentication, authorization, multi-tenant isolation, rate limiting, or durable audit log.
+- Consumer handlers are predefined; users cannot upload code. Invariants support only `equals`, `greaterThan`, and `exists` path checks.
+- Compatibility analysis covers common required-field, removed-property, and narrowed-type changes; it does not prove full behavioral compatibility.
+- Worker execution is at-least-once from Kafka with database state guards and three processing attempts. The local MVP does not include an admin UI for inspecting or replaying dead-letter messages.
+- Automated coverage focuses on the schema engine, handlers, and API validation. Full containerized end-to-end verification depends on Docker services being available.
+- GitHub Actions integration is a future milestone; the REST API provides a foundation for CI checks.

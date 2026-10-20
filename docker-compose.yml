@@ -2,15 +2,82 @@ services:
   mongodb:
     image: mongo:8.0
     restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - eventguard-mongodb:/data/db
+    ports: ['27017:27017']
+    volumes: ['eventguard-mongodb:/data/db']
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      test:
+        ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
       interval: 10s
       timeout: 5s
       retries: 5
+  redpanda:
+    image: redpandadata/redpanda:v24.3.9
+    command:
+      [
+        'redpanda',
+        'start',
+        '--mode',
+        'dev-container',
+        '--smp',
+        '1',
+        '--memory',
+        '1G',
+        '--overprovisioned',
+        '--kafka-addr',
+        'internal://0.0.0.0:9092,external://0.0.0.0:19092',
+        '--advertise-kafka-addr',
+        'internal://redpanda:9092,external://localhost:9092',
+      ]
+    ports: ['9092:19092', '9644:9644']
+    volumes: ['eventguard-redpanda:/var/lib/redpanda/data']
+    healthcheck:
+      test: ['CMD', 'rpk', 'cluster', 'health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  api:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ['npm', '--workspace', 'server', 'run', 'dev']
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:5173
+      MONGODB_URI: mongodb://mongodb:27017/eventguard
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: eventguard.test-runs
+    ports: ['4000:4000']
+    depends_on:
+      mongodb: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    volumes: ['./server:/app/server', './shared:/app/shared']
+  worker:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ['node', 'worker/src/worker.js']
+    environment:
+      MONGODB_URI: mongodb://mongodb:27017/eventguard
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: eventguard.test-runs
+      KAFKA_GROUP_ID: eventguard-workers
+    depends_on:
+      mongodb: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    volumes:
+      ['./server:/app/server', './worker:/app/worker', './shared:/app/shared']
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:4000/api
+    ports: ['5173:5173']
+    depends_on: [api]
+    volumes: ['./client:/app/client']
 
 volumes:
   eventguard-mongodb:
+  eventguard-redpanda:
