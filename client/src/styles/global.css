@@ -660,6 +660,13 @@ body {
   color: #8797ab;
   line-height: 1.5;
 }
+.row-actions { display: inline-flex; align-items: center; gap: 6px; }
+.danger-action { color: #e8958b !important; }
+.danger-action:hover { background: #482923 !important; }
+.api-tools-grid { margin-top: 18px; }
+.notice.success { display: flex; flex-direction: column; gap: 5px; border-color: #326151; color: #a7e0ca; }
+.notice.success small { color: #b1c2c8; }
+.finding-type { text-transform: uppercase; }
 @media (max-width: 900px) {
   .section-grid {
     grid-template-columns: 1fr;

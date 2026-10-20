@@ -4,10 +4,17 @@ import {
   createProject,
   createResource,
   createTestRun,
+  cancelTestRun,
+  compareSchemas,
+  deleteProject,
+  deleteResource,
   getHealth,
   getProjects,
   getResource,
   getTestRun,
+  updateConsumer,
+  updateProject,
+  validateSchemaPayload,
 } from './api/eventGuardApi';
 
 const navigation = [
@@ -69,6 +76,22 @@ function ProjectsPage({ workspace }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
+  const edit = async (project) => {
+    const name = window.prompt('Project name', project.name);
+    if (name === null) return;
+    try {
+      await updateProject(project._id, { name, description: project.description });
+      await workspace.reload();
+    } catch (error) { workspace.setError(error.message); }
+  };
+  const remove = async (project) => {
+    if (!window.confirm(`Delete ${project.name} and all its schemas, fixtures, consumers, and runs?`)) return;
+    try {
+      await deleteProject(project._id);
+      if (workspace.projectId === project._id) workspace.setProjectId('');
+      await workspace.reload();
+    } catch (error) { workspace.setError(error.message); }
+  };
   const submit = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -128,7 +151,10 @@ function ProjectsPage({ workspace }) {
                     <strong>{project.name}</strong>
                     <small>{project.description || 'No description'}</small>
                   </span>
-                  <span className="row-arrow">›</span>
+                  <span className="row-actions">
+                    <span className="quiet-button" onClick={(event) => { event.stopPropagation(); edit(project); }}>Edit</span>
+                    <span className="quiet-button danger-action" onClick={(event) => { event.stopPropagation(); remove(project); }}>Delete</span>
+                  </span>
                 </button>
               ))}
             </div>
@@ -158,6 +184,11 @@ function ResourcePage({ resource, workspace }) {
   const [schemaText, setSchemaText] = useState(
     '{\n  "$schema": "https://json-schema.org/draft/2020-12/schema",\n  "type": "object",\n  "properties": {\n    "orderId": { "type": "string" },\n    "amount": { "type": "number" },\n    "quantity": { "type": "integer" }\n  },\n  "required": ["orderId"]\n}',
   );
+  const [validationText, setValidationText] = useState('{\n  "orderId": "ord_1001",\n  "amount": 42.5,\n  "quantity": 2\n}');
+  const [validationResult, setValidationResult] = useState(null);
+  const [compareFrom, setCompareFrom] = useState('1');
+  const [compareTo, setCompareTo] = useState('2');
+  const [comparison, setComparison] = useState(null);
   const reload = async () => {
     if (!workspace.projectId) return;
     setLoading(true);
@@ -209,6 +240,29 @@ function ResourcePage({ resource, workspace }) {
       setSaving(false);
     }
   };
+  const removeItem = async (item) => {
+    if (!window.confirm('Delete this record?')) return;
+    try { await deleteResource(workspace.projectId, resource, item._id); await reload(); }
+    catch (reason) { setError(reason.message); }
+  };
+  const toggleConsumer = async (item) => {
+    try { await updateConsumer(workspace.projectId, item._id, { enabled: !item.enabled }); await reload(); }
+    catch (reason) { setError(reason.message); }
+  };
+  const validatePayload = async (event) => {
+    event.preventDefault();
+    try {
+      const schema = items.find((item) => item._id === validationSchemaId);
+      setValidationResult(await validateSchemaPayload(workspace.projectId, schema._id, JSON.parse(validationText)));
+    } catch (reason) { setError(reason.message); }
+  };
+  const [validationSchemaId, setValidationSchemaId] = useState('');
+  const compareVersions = async (event) => {
+    event.preventDefault();
+    try { setComparison(await compareSchemas(workspace.projectId, { eventName: compareEvent, fromVersion: Number(compareFrom), toVersion: Number(compareTo) })); }
+    catch (reason) { setError(reason.message); }
+  };
+  const [compareEvent, setCompareEvent] = useState('');
   const title = {
     schemas: 'Event schemas',
     consumers: 'Consumers',
@@ -319,17 +373,24 @@ function ResourcePage({ resource, workspace }) {
           {loading ? (
             <Empty>Loading {title.toLowerCase()}…</Empty>
           ) : items.length ? (
-            <ResourceList items={items} resource={resource} />
+            <ResourceList items={items} resource={resource} onDelete={removeItem} onToggle={toggleConsumer} />
           ) : (
             <Empty>No {title.toLowerCase()} in this project yet.</Empty>
           )}
         </section>
       </div>
+      {resource === 'schemas' && <div className="section-grid api-tools-grid">
+        <section className="panel"><h2>Validate a payload</h2><p>Check a JSON payload against a registered schema version.</p><form onSubmit={validatePayload}>
+          <label className="field">Schema version<select required value={validationSchemaId} onChange={(event) => setValidationSchemaId(event.target.value)}><option value="">Choose schema</option>{items.map((item) => <option key={item._id} value={item._id}>{item.eventName} · v{item.version}</option>)}</select></label>
+          <label className="field">Payload<textarea className="code-input" rows="6" value={validationText} onChange={(event) => setValidationText(event.target.value)} /></label><button className="primary-button" disabled={!items.length}>Validate payload</button>
+        </form>{validationResult && <div className={`notice ${validationResult.valid ? 'success' : 'error'}`}>{validationResult.valid ? 'Payload is valid.' : `${validationResult.errors?.length ?? 0} validation error(s)`}{validationResult.errors?.map((item, index) => <small key={index}>{item.message}</small>)}</div>}</section>
+        <section className="panel"><h2>Compare schema versions</h2><p>Review likely compatibility changes between two versions.</p><form onSubmit={compareVersions}><Field label="Event name" value={compareEvent} onChange={(event) => setCompareEvent(event.target.value)} placeholder="order.created" /><div className="field-pair"><Field label="From" type="number" min="1" value={compareFrom} onChange={(event) => setCompareFrom(event.target.value)} /><Field label="To" type="number" min="2" value={compareTo} onChange={(event) => setCompareTo(event.target.value)} /></div><button className="primary-button">Compare versions</button></form>{comparison && <div className="finding-list">{comparison.findings.length ? comparison.findings.map((finding, index) => <article className="finding" key={index}><span className="finding-type">{finding.severity}</span><strong>{finding.message}</strong><small>{finding.path} · {finding.code}</small></article>) : <p>No compatibility findings detected.</p>}</div>}</section>
+      </div>}
     </>
   );
 }
 
-function ResourceList({ items, resource }) {
+function ResourceList({ items, resource, onDelete, onToggle }) {
   return (
     <div className="list">
       {items.map((item) => (
@@ -350,7 +411,7 @@ function ResourceList({ items, resource }) {
                   : `Created ${new Date(item.createdAt).toLocaleDateString()}`}
             </small>
           </span>
-          <span className="status-badge">
+          <span className="row-actions">{resource === 'consumers' && <button className="quiet-button" onClick={() => onToggle(item)}>{item.enabled ? 'Disable' : 'Enable'}</button>}<button className="quiet-button danger-action" onClick={() => onDelete(item)}>Delete</button><span className="status-badge">
             {resource === 'schemas'
               ? 'SCHEMA'
               : resource === 'fixtures'
@@ -358,7 +419,7 @@ function ResourceList({ items, resource }) {
                 : item.enabled
                   ? 'ACTIVE'
                   : 'PAUSED'}
-          </span>
+          </span></span>
         </article>
       ))}
     </div>
@@ -521,6 +582,7 @@ function TestRunsPage({ workspace }) {
             >
               {selectedRun.outcome ?? selectedRun.status}
             </span>
+            {selectedRun.status === 'queued' && <button className="quiet-button danger-action" onClick={async () => { try { setSelectedRun(await cancelTestRun(workspace.projectId, selectedRun._id)); } catch (reason) { setError(reason.message); } }}>Cancel queued run</button>}
           </div>
           {selectedRun.status === 'queued' ||
           selectedRun.status === 'running' ? (

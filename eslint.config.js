@@ -13,6 +13,7 @@ export default [
         URL: 'readonly',
         process: 'readonly',
         document: 'readonly',
+        window: 'readonly',
         localStorage: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
