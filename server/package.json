@@ -1,0 +1,22 @@
+{
+  "name": "@eventguard/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "vitest run",
+    "lint": "eslint src tests"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "mongoose": "^8.12.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.22.0",
+    "supertest": "^7.1.0",
+    "vitest": "^3.0.8"
+  }
+}
