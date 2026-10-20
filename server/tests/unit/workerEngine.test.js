@@ -43,8 +43,8 @@ describe('worker engine', () => {
       consumersTested: 1,
       failedConsumers: 1,
     });
-    expect(result.results[0].validAtSource).toBe(true);
-    expect(result.results[0].validAtTarget).toBe(false);
+    expect(result.results[0].schemaValidation.original).toBe('passed');
+    expect(result.results[0].schemaValidation.target).toBe('failed');
   });
 
   it('checks supported path invariants and aggregates a fail outcome', () => {

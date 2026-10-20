@@ -5,7 +5,7 @@ import {
   Project,
   TestRun,
 } from '../../../shared/src/models.js';
-import { compareSchemas } from '../../../shared/src/compatibility.js';
+import { analyzeCompatibility } from '../../../shared/src/compatibility.js';
 import {
   assertJsonSchema,
   validatePayload,
@@ -152,7 +152,7 @@ export async function compareSchemaVersions(
       'INVALID_SCHEMA_PAIR',
       'Schemas must belong to the same event and the old version must be lower.',
     );
-  const findings = compareSchemas(
+  const analysis = analyzeCompatibility(
     oldSchema.schemaDefinition,
     newSchema.schemaDefinition,
     {
@@ -166,9 +166,8 @@ export async function compareSchemaVersions(
     newSchemaId: newSchema.id,
     oldVersion: oldSchema.version,
     newVersion: newSchema.version,
-    compatible: findings.length === 0,
-    findings,
-    preliminary: true,
+    ...analysis,
+    findings: analysis.findings,
   };
 }
 

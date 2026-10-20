@@ -7,6 +7,10 @@ testRunRouter.post(
   '/projects/:projectId/test-runs',
   asyncRoute(controller.create),
 );
+testRunRouter.post(
+  '/projects/:projectId/test-runs/preview',
+  asyncRoute(controller.preview),
+);
 testRunRouter.get(
   '/projects/:projectId/test-runs',
   asyncRoute(controller.list),

@@ -21,12 +21,17 @@ describe('JSON Schema validation', () => {
   });
 
   it('returns deterministic errors for invalid payloads', () => {
+    const result = validatePayload(schema, { amount: '10', other: true });
+    expect(result).toMatchObject({ valid: false });
     expect(
       validatePayload(schema, { amount: '10', other: true }),
     ).toMatchObject({ valid: false });
+    expect(result.errors.map((item) => item.path)).toEqual(['$.amount', '$.other']);
   });
 
   it('rejects malformed schema documents', () => {
     expect(() => assertJsonSchema({ type: 'not-a-json-type' })).toThrow();
+    expect(() => assertJsonSchema({ $schema: 'http://json-schema.org/draft-07/schema#', type: 'object' }))
+      .toThrow(/Only JSON Schema Draft 2020-12 is supported/);
   });
 });

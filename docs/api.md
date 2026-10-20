@@ -82,7 +82,7 @@ Provide IDs for schemas belonging to the same event in the same project, with th
 }
 ```
 
-The result includes `compatible`, both schema IDs/versions, `preliminary: true`, and findings with `code`, `severity`, JSONPath `path`, `message`, `oldVersion`, and `newVersion`. The analyzer detects removed properties, newly required properties, narrowed primitive types, removed enum values, nested properties, and array item schemas. Changed constraints it does not analyze (such as `additionalProperties`, `minimum`, `pattern`, or composition/reference keywords) produce explicit warnings and set `compatible` to false. This is a conservative heuristic, not a proof of runtime compatibility.
+The result includes `compatible`, `analysisComplete`, `direction: "old-valid-to-new-valid"`, both schema IDs/versions, and findings with `code`, `severity`, JSONPath `path`, `message`, `oldVersion`, and `newVersion`. It asks whether events accepted by the old schema remain accepted by the new schema. Newly required fields, type narrowing, removed enum values, array restrictions, and rejecting old additional properties are errors. A removed declaration is informational when the new schema still permits additional properties; consumers may nevertheless rely on it. Unsupported constructs or constraints produce warnings, set `analysisComplete` false, and do not count as proven compatible. Consumer behavior is checked separately by replay; schema compatibility alone does not imply consumer compatibility.
 
 ## Consumers
 
@@ -99,7 +99,7 @@ The result includes `compatible`, both schema IDs/versions, `preliminary: true`,
 }
 ```
 
-The event schema version must already exist in this project. `handlerType` must be `order-validation`, `payment-amount`, or `inventory-quantity`. Invariants are declarative data only: up to 20 path checks with `equals` (requires `value`), `greaterThan` (requires a number), or `exists`. Safe dot-paths are accepted; arbitrary functions and executable text are rejected. Consumer names are unique per project.
+The event schema version must already exist in this project. `handlerType` must be `order-validation`, `payment-amount`, or `inventory-quantity`. Invariants are declarative data only: up to 20 checks using `exists`, `positiveNumber`, `nonNegative`, `greaterThan` (requires a number), `equals` (requires `value`), `oneOf` (requires an array `value`), or `fieldsEqual` (requires `otherPath`). Safe dot-paths are accepted; arbitrary functions and executable text are rejected. Consumer names are unique per project.
 
 ### List, update, and delete
 
@@ -132,7 +132,19 @@ When changing `eventName` or `expectedSchemaVersion`, the resulting pair must re
 
 ## Existing test-run API
 
-Test-run endpoints remain available for the Phase 1 implementation; they require Redpanda/Kafka as well as MongoDB:
+### Synchronous preview — `POST /projects/:projectId/test-runs/preview`
+
+Runs the deterministic compatibility and historical replay engine synchronously. It validates the project and both increasing schema versions, preloads schemas, fixtures, and consumers from that project, and returns a report without creating a `TestRun` record or publishing to Kafka.
+
+```json
+{ "eventName": "order.created", "fromVersion": 1, "toVersion": 2 }
+```
+
+The report has `mode: "synchronous-preview"`, `executionStatus: "completed"`, and `outcome: "pass" | "warning" | "fail"`. `fail` means a confirmed compatibility or consumer execution failure; `warning` means an unresolved analysis risk, skipped check, or pre-existing invalid fixture; `pass` means all applicable checks completed without findings. A successful execution may therefore have outcome `fail`. Fixture results retain their source and target validation results and identify pre-existing invalid fixtures separately. Reports store fixture and consumer identifiers, versions, findings, counts, and timing, but not payload copies.
+
+### Asynchronous test-run endpoints
+
+Existing asynchronous test-run endpoints remain available; they require Redpanda/Kafka as well as MongoDB:
 
 - `POST /projects/:projectId/test-runs` with `{ "eventName": "order.created", "fromVersion": 1, "toVersion": 2 }` (202)
 - `GET /projects/:projectId/test-runs?page=1&limit=25`

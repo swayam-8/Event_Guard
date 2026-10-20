@@ -12,6 +12,7 @@ import {
   getProjects,
   getResource,
   getTestRun,
+  previewTestRun,
   updateConsumer,
   updateProject,
   validateSchemaPayload,
@@ -657,6 +658,30 @@ function TestRunsPage({ workspace }) {
       setBusy(false);
     }
   };
+  const preview = async () => {
+    setBusy(true);
+    try {
+      const report = await previewTestRun(workspace.projectId, {
+        eventName,
+        fromVersion: Number(fromVersion),
+        toVersion: Number(toVersion),
+      });
+      const results = [
+        ...(report.compatibility?.findings ?? []).map((item) => ({ type: 'compatibility', ...item })),
+        ...report.fixtures.flatMap((fixture) => [
+          ...(fixture.findings ?? []).map((item) => ({ type: 'fixture', fixtureId: fixture.fixtureId, ...item })),
+          ...(fixture.findings?.length ? [] : [{ type: 'fixture', fixtureId: fixture.fixtureId, message: `Fixture ${fixture.outcome}.` }]),
+          ...(fixture.consumerResults ?? []).flatMap((consumer) => consumer.findings.map((item) => ({ type: 'consumer', fixtureId: fixture.fixtureId, consumerId: consumer.consumerId, ...item }))),
+        ]),
+      ];
+      setSelectedRun({ ...report, status: report.executionStatus, results });
+      setError('');
+    } catch (reason) {
+      setError(reason.response?.data?.error?.message ?? reason.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const openRun = async (run) => {
     try {
       setSelectedRun(await getTestRun(workspace.projectId, run._id));
@@ -710,6 +735,15 @@ function TestRunsPage({ workspace }) {
             >
               {busy ? 'Queueing…' : 'Start test run'}
             </button>
+            <button
+              className="quiet-button"
+              type="button"
+              disabled={busy || schemas.length < 2}
+              onClick={preview}
+            >
+              {busy ? 'Running preview…' : 'Preview synchronously'}
+            </button>
+            <small>Preview runs locally through the API and does not create a Kafka job.</small>
           </form>
         </section>
         <section className="panel">
@@ -748,7 +782,9 @@ function TestRunsPage({ workspace }) {
         <section className="panel report-panel">
           <div className="panel-title-row">
             <div>
-              <div className="eyebrow">TEST REPORT</div>
+              <div className="eyebrow">
+                {selectedRun.mode === 'synchronous-preview' ? 'SYNCHRONOUS PREVIEW' : 'TEST REPORT'}
+              </div>
               <h2>
                 {selectedRun.eventName} · v{selectedRun.fromVersion} → v
                 {selectedRun.toVersion}

@@ -8,7 +8,17 @@ npm run lint
 npm run build
 ```
 
-The default Vitest suite is deterministic and isolated. API endpoint tests use Supertest with mocked persistence; schema, model, invariant, and worker-engine tests run without a service dependency.
+The default Vitest suite is deterministic and isolated. API endpoint tests, including synchronous preview, use Supertest with mocked persistence. Engine tests cover old-to-new compatibility direction, unknown schema constructs, fixture source/target validation, pre-existing invalid fixtures, cross-project rejection, built-in handlers, invariant outcomes, report statuses, and payload immutability without starting MongoDB, Kafka, or the frontend.
+
+To manually preview a run against the seeded sample project, find its ID from `GET /api/projects`, then send:
+
+```sh
+curl -s -X POST http://localhost:4000/api/projects/PROJECT_ID/test-runs/preview \
+  -H 'Content-Type: application/json' \
+  -d '{"eventName":"order.created","fromVersion":1,"toVersion":2}'
+```
+
+This endpoint returns a completed synchronous report and does not create an asynchronous run. Use `order.note` for a compatible optional-field change, `order.updated` for an older consumer invariant failure, `payment.authorized` for a pre-existing negative payment, `inventory.changed` for an invalid quantity, and `legacy.imported` for a pre-existing source-invalid fixture.
 
 ## Live MongoDB integration test
 

@@ -19,7 +19,7 @@ npm run seed
 
 Open the dashboard at <http://localhost:5173>. The API is at <http://localhost:4000/api> and the health endpoint is <http://localhost:4000/api/health>.
 
-The demo seed is safe to run more than once. It creates an `EventGuard Demo` project with `order.created` schema versions 1 and 2, an order-validation consumer, and representative historical fixtures. Its v1 decimal order is valid under v1 but fails v2 validation, which demonstrates deterministic replay. The `fixtures/order-created-v2-breaking.json` payload is an intentionally invalid payload for trying the schema validation endpoint; invalid payloads cannot be saved as fixtures.
+The demo seed is safe to run more than once. It creates synthetic schemas, consumers, and historical events for compatible optional-field additions, newly required fields, removed consumer fields, invalid payments, invalid inventory quantities, and a pre-existing invalid fixture. A few demo fixtures are intentionally invalid and are inserted by the seed to demonstrate replay classification; the REST fixture-create endpoint still rejects invalid payloads.
 
 To stop the stack, run `docker compose down`. Use `docker compose down -v` only when you intentionally want to remove local MongoDB and Redpanda data.
 
@@ -77,14 +77,15 @@ See [architecture](docs/architecture.md), [API guide](docs/api.md), and [testing
 2. Open **Event schemas** and confirm `order.created` versions 1 and 2 are present.
 3. Open **Consumers** and confirm the `Order fulfillment` consumer.
 4. Open **Historical fixtures** and inspect the v1 and v2 events.
-5. Open **Test runs**, use event name `order.created`, versions `1` and `2`, and start a run.
-6. Wait for the report to complete. It should show a compatibility warning for the new required `currency` field and a failed replay of the old decimal event against v2.
+5. Preview `order.created` with versions `1` and `2` to inspect the new required `currency` field and the old decimal event failing v2 validation.
+6. Preview `order.note` versions `1` and `2` for the compatible optional-field case, or `order.updated` versions `1` and `2` to see the older consumer's missing `customerId` invariant fail.
 
 For a direct API check:
 
 ```sh
 curl -s http://localhost:4000/api/health
 curl -s http://localhost:4000/api/projects
+curl -s -X POST http://localhost:4000/api/projects/PROJECT_ID/test-runs/preview -H "Content-Type: application/json" -d '{"eventName":"order.created","fromVersion":1,"toVersion":2}'
 ```
 
 API responses use `{ "success": true, "data": ... }` or `{ "success": false, "error": { "code": ..., "message": ... } }`. List endpoints accept `page` and `limit` (maximum 100).
@@ -108,14 +109,15 @@ API responses use `{ "success": true, "data": ... }` or `{ "success": false, "er
 - Consumers: create/list/get/patch/delete under `/api/projects/:projectId/consumers`
 - Fixtures: create/list/get/delete under `/api/projects/:projectId/fixtures`
 - Test runs: create/list/get under `/api/projects/:projectId/test-runs`; results at `/:runId/results`; cancel queued runs at `/:runId/cancel`
+- Synchronous engine preview: `POST /api/projects/:projectId/test-runs/preview` (MongoDB only; no Kafka job is created)
 
 All child-resource operations are scoped to the requested project. Test-run outcomes (`pass`, `warning`, `fail`) are distinct from execution statuses (`queued`, `running`, `completed`, `failed`, `cancelled`). A completed run with findings has completed execution status and a fail or warning outcome.
 
 ## Current limitations
 
 - Local development only: there is no authentication, authorization, multi-tenant isolation, rate limiting, or durable audit log.
-- Consumer handlers are predefined; users cannot upload code. Invariants support only `equals`, `greaterThan`, and `exists` path checks.
-- Compatibility analysis covers common required-field, removed-property, and narrowed-type changes; it does not prove full behavioral compatibility.
+- Consumer handlers are predefined; users cannot upload code. Invariants use the explicit safe allowlist documented in [the API guide](docs/api.md).
+- Compatibility analysis proves only selected JSON Schema changes; warnings mark unsupported constructs and the engine does not prove consumer behavior beyond registered handlers and invariants.
 - Worker execution is at-least-once from Kafka with database state guards and three processing attempts. The local MVP does not include an admin UI for inspecting or replaying dead-letter messages.
 - Automated coverage focuses on the schema engine, handlers, and API validation. Full containerized end-to-end verification depends on Docker services being available.
 - GitHub Actions integration is a future milestone; the REST API provides a foundation for CI checks.

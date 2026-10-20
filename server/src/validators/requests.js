@@ -151,6 +151,16 @@ export function validateSchemaComparisonBody(body) {
   };
 }
 
+export function validatePreviewBody(body) {
+  assertObjectBody(body, ['eventName', 'fromVersion', 'toVersion']);
+  const eventName = requiredString(body.eventName, 'eventName', 160);
+  const fromVersion = positiveInteger(body.fromVersion, 'fromVersion');
+  const toVersion = positiveInteger(body.toVersion, 'toVersion');
+  if (fromVersion >= toVersion)
+    throw new HttpError(400, 'INVALID_SCHEMA_PAIR', 'toVersion must be greater than fromVersion.');
+  return { eventName, fromVersion, toVersion };
+}
+
 export function validateSchemaPayloadBody(body) {
   assertObjectBody(body, ['payload']);
   if (!Object.hasOwn(body, 'payload'))

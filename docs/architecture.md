@@ -16,7 +16,13 @@ The API returns structured errors without stack traces and logs operational cont
 
 ## Deterministic engine
 
-AJV validates schema documents and event payloads. Schema comparison reports heuristics for newly required fields, removed properties, and narrowed types, with paths and explanations. These findings are not proof of application compatibility. Historical fixtures are checked against their declared schema and target version, then each applicable enabled consumer handler and declarative invariant is run. Reports capture exact fixture/consumer IDs, schema versions, findings, counts, outcome, execution status, and duration.
+The pure worker engine is split into `compatibilityEngine.js`, `fixtureRunner.js`, `invariantChecker.js`, `reportBuilder.js`, and `handlers/handlerRegistry.js`. The shared registry remains the canonical handler allowlist for both Mongoose/API validation and execution. Inputs are ordinary objects; database reads remain in the server service. The synchronous preview endpoint preloads all event schemas, fixtures, and consumers for one project, then passes them to the pure runner without creating a queued record.
+
+AJV uses JSON Schema Draft 2020-12 for schema documents and event payloads. Compatibility asks whether all old-valid values remain valid under the new schema. Proven validation failures are errors; unsupported constructs such as composition/reference keywords and incompletely analyzed constraints generate warnings and make `analysisComplete` false. Removed declarations are informational if the new schema still permits additional properties, because consumer reliance is a separate test. Findings sort by path, code, severity, and message.
+
+Historical fixtures are checked against their declared schema and target version. Source-invalid fixtures are labeled pre-existing and do not count by themselves as target regressions. They can still produce confirmed consumer or invariant failures. Applicable enabled registered handlers and declarative invariants run sequentially; no user JavaScript, network requests, or AI decisions are involved. The runner rejects cross-project fixture input, skips missing source schemas with a finding, and never mutates payloads.
+
+Reports identify project, event, schema versions, fixture IDs, and consumer IDs without copying payloads. Execution status is `completed` independently of outcome. Outcome is `fail` for confirmed compatibility/consumer failures, `warning` for incomplete analysis, skipped checks, or pre-existing invalid fixtures, and `pass` when applicable checks finish without findings. Repeated inputs produce the same ordered findings and results, apart from timestamps and measured duration.
 
 ## Operational limits
 

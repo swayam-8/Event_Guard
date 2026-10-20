@@ -13,6 +13,8 @@ import {
   validateObjectId,
 } from '../utils/http.js';
 import { requireProject } from './resourceService.js';
+import { EngineInputError, replayFixtures } from '../../../worker/src/engine/fixtureRunner.js';
+import { buildReport } from '../../../worker/src/engine/reportBuilder.js';
 
 export async function createTestRun(projectId, body) {
   await requireProject(projectId);
@@ -28,9 +30,10 @@ export async function createTestRun(projectId, body) {
   const schemas = await EventSchema.find({
     projectId,
     eventName,
-    version: { $in: [fromVersion, toVersion] },
+    version: { $lte: toVersion },
   });
-  if (schemas.length !== 2)
+  if (!schemas.some((schema) => schema.version === fromVersion) ||
+      !schemas.some((schema) => schema.version === toVersion))
     throw new HttpError(
       400,
       'SCHEMA_VERSION_NOT_FOUND',
@@ -68,6 +71,51 @@ export async function createTestRun(projectId, body) {
     );
   }
   return run;
+}
+
+/** Synchronous, non-persistent engine preview for local development and tests. */
+export async function previewTestRun(projectId, { eventName, fromVersion, toVersion }) {
+  await requireProject(projectId);
+  if (fromVersion >= toVersion)
+    throw new HttpError(400, 'INVALID_SCHEMA_PAIR', 'toVersion must be greater than fromVersion.');
+  const schemaRecords = await EventSchema.find({
+    projectId,
+    eventName,
+    version: { $lte: toVersion },
+  }).lean();
+  const oldSchema = schemaRecords.find((item) => item.version === fromVersion);
+  const newSchema = schemaRecords.find((item) => item.version === toVersion);
+  if (!oldSchema || !newSchema)
+    throw new HttpError(404, 'SCHEMA_VERSION_NOT_FOUND', 'Both requested schema versions must exist for this event in the project.');
+  const [consumers, fixtures] = await Promise.all([
+    Consumer.find({ projectId, eventName }).lean(),
+    EventFixture.find({ projectId, eventName }).lean(),
+  ]);
+  const startedAt = new Date();
+  let replay;
+  try {
+    replay = replayFixtures({
+      projectId, eventName, fixtures, schemas: schemaRecords, consumers,
+      toVersion, fromVersion,
+    });
+  } catch (error) {
+    if (!(error instanceof EngineInputError)) throw error;
+    const status = error.code === 'CROSS_PROJECT_FIXTURE' ? 404 : 400;
+    throw new HttpError(status, error.code, error.message);
+  }
+  return {
+    mode: 'synchronous-preview',
+    ...buildReport({
+      projectId,
+      eventName,
+      fromVersion,
+      toVersion,
+      startedAt,
+      durationMs: replay.durationMs,
+      replay,
+      compatibility: replay.compatibility,
+    }),
+  };
 }
 
 export async function listTestRuns(projectId, query) {

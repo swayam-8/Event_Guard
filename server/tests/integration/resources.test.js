@@ -113,8 +113,8 @@ describe('project-scoped resource APIs', () => {
     expect(valid.body.data).toMatchObject({ valid: true, errors: [] });
     expect(invalid.status).toBe(200);
     expect(invalid.body.data.valid).toBe(false);
-    expect(invalid.body.data.errors[0]).toMatchObject({
-      path: '$',
+    expect(invalid.body.data.errors.find((item) => item.keyword === 'required')).toMatchObject({
+      path: '$.id',
       keyword: 'required',
     });
   });
@@ -207,8 +207,8 @@ describe('project-scoped resource APIs', () => {
         payload: { amount: 'wrong' },
       });
     expect(invalid.status).toBe(422);
-    expect(invalid.body.error.details[0]).toMatchObject({
-      field: '$',
+    expect(invalid.body.error.details.find((item) => item.keyword === 'required')).toMatchObject({
+      field: '$.id',
       keyword: 'required',
     });
   });

@@ -19,6 +19,8 @@ export const compareSchemas = (projectId, data) =>
   client.post(`/projects/${projectId}/schemas/compare`, data);
 export const createTestRun = (projectId, data) =>
   client.post(`/projects/${projectId}/test-runs`, data);
+export const previewTestRun = (projectId, data) =>
+  client.post(`/projects/${projectId}/test-runs/preview`, data);
 export const getTestRun = (projectId, runId) =>
   client.get(`/projects/${projectId}/test-runs/${runId}`);
 export const cancelTestRun = (projectId, runId) =>
