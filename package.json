@@ -16,7 +16,7 @@
     "seed": "node scripts/seed.js",
     "dev:client": "npm --workspace client run dev",
     "build": "npm --workspace client run build",
-    "test": "npm --workspace server test",
+    "test": "npm --workspace server test && npm --workspace client test",
     "lint": "npm --workspace server run lint && npm --workspace client run lint && eslint worker/src shared/src",
     "format": "prettier --write ."
   },

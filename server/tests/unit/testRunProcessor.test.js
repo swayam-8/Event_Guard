@@ -62,4 +62,26 @@ describe('test-run processor', () => {
     await expect(processTestRun('507f1f77bcf86cd799439011', '507f191e810c19729de860ea'))
       .rejects.toMatchObject({ code: 'INVALID_RUN_REFERENCE' });
   });
+
+  it('returns transient processing failures to queued for bounded retry', async () => {
+    const run = runRecord(2);
+    run.inputSnapshot.schemas = [];
+    TestRun.findOneAndUpdate.mockResolvedValueOnce(run).mockResolvedValueOnce({});
+
+    await expect(processTestRun(run.id, run.projectId)).rejects.toThrow('Target schema version 2 was not supplied.');
+
+    expect(TestRun.findOneAndUpdate.mock.calls[1][1].status).toBe('queued');
+  });
+
+  it('persists an execution failure when the bounded attempt count is exhausted', async () => {
+    const run = runRecord(3);
+    run.inputSnapshot.schemas = [];
+    TestRun.findOneAndUpdate.mockResolvedValueOnce(run).mockResolvedValueOnce({});
+
+    await processTestRun(run.id, run.projectId);
+
+    const failure = TestRun.findOneAndUpdate.mock.calls[1][1];
+    expect(failure.status).toBe('failed');
+    expect(failure.errorMessage).toContain('3 attempts');
+  });
 });

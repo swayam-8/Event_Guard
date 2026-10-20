@@ -8,7 +8,7 @@ npm run lint
 npm run build
 ```
 
-Phase 4 verification in the current workspace: `npm test` passed (63 passed, 1 optional MongoDB test skipped); `npm run lint`, `npm run build`, `docker compose config --quiet`, and `git diff --check` passed. Docker Compose startup and the real Kafka/Mongo/UI end-to-end flow were not run because the Docker Desktop engine was unavailable.
+The root `npm test` command runs both backend and frontend suites. Latest Phase 4 verification: backend tests passed (65, with 1 optional MongoDB test skipped), frontend tests passed (4); `npm run lint`, `npm run build`, `docker compose config --quiet`, and `git diff --check` passed. Docker Compose startup and the real Kafka/Mongo/UI end-to-end flow were not run because the Docker Desktop engine was unavailable.
 
 The default Vitest suite is deterministic and isolated. API endpoint tests, including synchronous preview, use Supertest with mocked persistence. Engine tests cover old-to-new compatibility direction, unknown schema constructs, fixture source/target validation, pre-existing invalid fixtures, cross-project rejection, built-in handlers, invariant outcomes, report statuses, payload immutability, and the versioned worker-message contract without starting MongoDB, Kafka, or the frontend.
 

@@ -99,7 +99,7 @@ API responses use `{ "success": true, "data": ... }` or `{ "success": false, "er
 | `npm run dev:worker` | Background worker only |
 | `npm run dev:client` | Vite frontend only |
 | `npm run build`  | Production build of the React dashboard                                 |
-| `npm test`       | Vitest unit and API integration suites                                  |
+| `npm test`       | Backend/API and frontend interaction test suites                        |
 | `npm run lint`   | ESLint across API, tests, and client                                    |
 | `npm run format` | Format project files with Prettier                                      |
 | `npm run seed`   | Idempotently seed the local demonstration project                       |
